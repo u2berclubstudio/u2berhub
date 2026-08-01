@@ -1,0 +1,51 @@
+# U2berClub Tools — creator platform
+
+Invite-only hub for U2berClub's creator tools. Each approved creator signs in and gets
+their **own private workspace** — their SAVEDREELS notes, teardowns, etc. are stored per
+user in Postgres and never visible to anyone else.
+
+## How it works
+- **Signup is invite-code only.** Admin generates codes in the Admin panel and hands them out.
+- New signups land as **pending** → admin approves → account goes **active** → tools unlock.
+- **Admin panel**: approve/block users, mint invite codes (with usage limits).
+- **Per-user data**: every tool's data is keyed to the signed-in user. Airtight isolation.
+- **Tool hub**: a dashboard of tools. SAVEDREELS is live; add more by dropping a component
+  in `client/src/tools/` and a line in `server/tools.js`.
+
+## Stack
+React + Vite (client) · Express + Postgres (server) · cookie sessions · scrypt passwords.
+No third-party auth service — it all runs on your VPS.
+
+## Deploy to your VPS (one command)
+On a fresh Ubuntu VPS as root, with the repo copied up:
+```bash
+bash deploy-vps.sh tools.u2berclub.com you@email.com atul@u2berclub.com "a-strong-admin-password"
+```
+This installs Node + Postgres + nginx, creates the database, builds the app, starts it under
+PM2, and gets HTTPS. First admin account is seeded from the email/password you pass in.
+
+Point `tools.u2berclub.com`'s DNS A-record at the VPS IP **before** running (for SSL).
+
+## Local development
+```bash
+# 1. a local Postgres running, then:
+createdb u2berhub
+export DATABASE_URL="postgres://you@localhost:5432/u2berhub"
+export ADMIN_EMAIL="atul@u2berclub.com" ADMIN_PASSWORD="adminpass123"
+# 2. build client + run server
+npm install && npm run build && npm start
+# open http://localhost:4000
+```
+For hot-reloading the UI: `cd client && npm run dev` (proxies /api to :4000).
+
+## Adding a tool
+1. `server/tools.js` — add `{ id, name, tagline, status:"live" }`.
+2. `client/src/tools/YourTool.jsx` — build it; read/write via `/api/data/<toolid>`
+   (GET returns your data object, PUT merges it, DELETE removes a key). Already scoped to the user.
+3. `client/src/App.jsx` — add a route line for `/tool/<id>`.
+
+## Security notes
+- Passwords: scrypt with per-user salt. Sessions: random httpOnly cookies, 30-day expiry.
+- The Claude "Ask your reels" box needs an API key server-side; it's off by default here.
+  Say the word and I'll wire it to a shared key or the key-free paste flow.
+- Add HTTP basic-auth or IP allowlist in nginx if you want the whole site private during beta.
