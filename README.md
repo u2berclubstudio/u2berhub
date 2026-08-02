@@ -49,3 +49,11 @@ For hot-reloading the UI: `cd client && npm run dev` (proxies /api to :4000).
 - The Claude "Ask your reels" box needs an API key server-side; it's off by default here.
   Say the word and I'll wire it to a shared key or the key-free paste flow.
 - Add HTTP basic-auth or IP allowlist in nginx if you want the whole site private during beta.
+
+
+## Per-user vault (v2)
+Each creator's uploaded reels are now saved to their account, not just their browser.
+- On first upload, the parsed vault is stored server-side under the user (`savedreels_vault`).
+- On login from ANY browser/device, it auto-loads — no re-upload needed.
+- "Load different files" clears the stored vault and lets them upload a fresh export.
+- Notes and the vault are stored separately, both per-user, both isolated.

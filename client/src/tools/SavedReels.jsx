@@ -460,6 +460,8 @@ function renderAnswer(text) {
 
 export default function SavedReels({ me }) {
   const [records, setRecords] = useState(null);
+  const [vaultLoaded, setVaultLoaded] = useState(false);
+  const [vaultState, setVaultState] = useState("idle");
   const [errors, setErrors] = useState([]);
   const [hot, setHot] = useState(false);
   const [selCol, setSelCol] = useState(null);
@@ -487,6 +489,27 @@ export default function SavedReels({ me }) {
     if (!recs.length) { setErrors(errs.length ? errs : ["No saved posts found."]); return; }
     setRecords(recs); setErrors(errs); setSelCol(null); setShowAllCols(false); setAnswer(""); setSearch("");
   }, []);
+
+  /* store the whole vault server-side, under this user's account */
+  const saveVault = useCallback(async (recs) => {
+    try {
+      setVaultState("saving");
+      const r = await fetch("/api/data/savedreels_vault", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ records: { records: recs, savedAt: Date.now() } }),
+      });
+      setVaultState(r.ok ? "saved" : "local");
+    } catch { setVaultState("local"); }
+  }, []);
+
+  /* Whenever the vault changes from a user action (upload or sample), push it to the
+     server — but NOT when it was just auto-loaded FROM the server on login. */
+  const skipVaultSave = useRef(true);
+  useEffect(() => {
+    if (skipVaultSave.current) { skipVaultSave.current = false; return; }
+    if (records && records.length) saveVault(records);
+  }, [records, saveVault]);
 
   const stats = useMemo(() => {
     if (!records) return null;
@@ -525,14 +548,13 @@ export default function SavedReels({ me }) {
 
   useEffect(() => { setLimit(24); }, [search, selCol, view, pfilter]);
 
-  /* Load notes from the server once at startup, merged with the local cache.
-     If there's no server (artifact sandbox / static host), we stay local-only. */
+  /* On login: pull this user's notes AND their saved vault from the server. */
   useEffect(() => {
     let dead = false;
     (async () => {
       try {
         const r = await fetch("/api/data/savedreels", { credentials: "include" });
-        if (!r.ok) throw new Error("no notes api");
+        if (!r.ok) throw new Error("no api");
         const server = await r.json();
         if (dead) return;
         setNotes(server || {});
@@ -541,6 +563,16 @@ export default function SavedReels({ me }) {
       } catch {
         if (!dead) { setServerOk(false); setSaveState("local"); }
       }
+      // load the vault itself, if this user has uploaded before
+      try {
+        const rv = await fetch("/api/data/savedreels_vault", { credentials: "include" });
+        if (rv.ok) {
+          const v = await rv.json();
+          const saved = v && v.records && Array.isArray(v.records.records) ? v.records.records : null;
+          if (!dead && saved && saved.length) { skipVaultSave.current = true; setRecords(saved); setVaultState("saved"); }
+        }
+      } catch {}
+      if (!dead) setVaultLoaded(true);
     })();
     return () => { dead = true; };
   }, []);
@@ -761,7 +793,13 @@ Rules:
           {stats && <div className="vault-counter"><div className="n">{stats.total}</div><div className="l">reels saved</div></div>}
         </div>
 
-        {!records && (
+        {!records && !vaultLoaded && (
+          <div style={{ marginTop: 40, textAlign: "center", color: "var(--muted)", fontFamily: "var(--mono)", fontSize: 13 }}>
+            Loading your vault…
+          </div>
+        )}
+
+        {!records && vaultLoaded && (
           <>
             <div className={"drop " + (hot ? "hot" : "")} style={{ marginTop: 22 }}
               onClick={() => fileRef.current?.click()}
@@ -946,7 +984,7 @@ Rules:
                   <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportNotion}>Export for Notion (.csv)</button>
                   <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportPlan}>Export content plan (.md)</button>
                   <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportCSV}>Export CSV</button>
-                  <button className="muted-link" style={{ marginLeft: "auto" }} onClick={() => { setRecords(null); setErrors([]); setAnswer(""); setQ(""); setSearch(""); setSelCol(null); }}>Load different files</button>
+                  <button className="muted-link" style={{ marginLeft: "auto" }} onClick={() => { fetch("/api/data/savedreels_vault/records", { method: "DELETE", credentials: "include" }).catch(() => {}); setRecords(null); setVaultState("idle"); setErrors([]); setAnswer(""); setQ(""); setSearch(""); setSelCol(null); }}>Load different files</button>
                 </div>
                 {aiErr && <div style={{ color: "#F0A0A0", fontSize: 13, marginTop: 12 }}>{aiErr}</div>}
                 {answer && <div className="answer">{renderAnswer(answer)}</div>}
