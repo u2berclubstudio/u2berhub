@@ -74,14 +74,22 @@ router.delete("/projects/:id", async (req, res) => {
 
 // ---- Inspirations ----
 router.post("/projects/:id/inspirations", (req, res) => withProject(req, res, (project) => {
-  const item = { id: uid("i"), url: req.body.url || "", platform: req.body.platform || "", note: req.body.note || "" };
+  const item = { id: uid("i"), url: req.body.url || "", platform: req.body.platform || "", note: req.body.note || "", shots: [] };
   project.inspirations.push(item); return item;
+}));
+
+// Save the shot breakdown for one inspiration reel (timestamped shots the user captured).
+router.patch("/projects/:id/inspirations/:inspId/shots", (req, res) => withProject(req, res, (project) => {
+  const insp = project.inspirations.find((x) => x.id === req.params.inspId);
+  if (!insp) throw Object.assign(new Error("Inspiration not found"), { code: 404 });
+  insp.shots = Array.isArray(req.body.shots) ? req.body.shots : [];
+  return insp;
 }));
 
 router.post("/projects/:id/inspirations/bulk", (req, res) => withProject(req, res, (project) => {
   const rows = Array.isArray(req.body.items) ? req.body.items : [];
   const created = rows.filter((r) => r && (r.url || "").trim()).map((r) => ({
-    id: uid("i"), url: (r.url || "").trim(), platform: (r.platform || "Instagram").trim(), note: (r.note || "").trim(),
+    id: uid("i"), url: (r.url || "").trim(), platform: (r.platform || "Instagram").trim(), note: (r.note || "").trim(), shots: [],
   }));
   project.inspirations.push(...created);
   return { created: created.length, items: created };

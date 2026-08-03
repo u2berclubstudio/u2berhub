@@ -174,10 +174,16 @@ async function changeStage(id, stage) {
 }
 
 // ---------- Inspiration tab ----------
+// Shot-breakdown vocabulary (from the U2berClub shot-breakdown-analyzer)
+const SHOT_TYPES = ["Extreme close-up", "Close-up", "Medium close-up", "Medium", "Medium-wide", "Wide", "Extreme-wide / establishing"];
+const SHOT_ANGLES = ["Eye-level", "Low angle", "High angle", "Dutch / tilted", "Overhead / top-down"];
+const SHOT_MOVES = ["Static", "Handheld", "Pan", "Tilt", "Push in", "Pull out", "Snap zoom", "Whip / whip-pan", "Tracking / follow", "Orbit"];
+
 function renderInspiration(project, editable) {
   const items = project.inspirations
     .map((i) => {
       const insta = isInstagramUrl(i.url);
+      const shotCount = (i.shots || []).length;
       return `
     <div class="insp-item ${insta ? "insp-item-embed" : ""}">
       ${instagramEmbedHtml(i.url)}
@@ -185,6 +191,10 @@ function renderInspiration(project, editable) {
         <div class="insp-platform">${escapeHtml(i.platform || "")}</div>
         ${!insta ? `<a class="insp-url" href="${escapeAttr(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.url)}</a>` : ""}
         <div class="insp-note">${escapeHtml(i.note)}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="openShotStudy('${project.id}','${i.id}')">🎬 ${shotCount ? `Shots (${shotCount})` : "Break down shots"}</button>
+          ${shotCount ? `<span class="muted" style="font-size:11px;">${(i.shots || []).map((s) => s.time).join(" · ")}</span>` : ""}
+        </div>
       </div>
     </div>`;
     })
@@ -228,7 +238,170 @@ async function addInspiration(id) {
   render();
 }
 
-// ---------- Import from SAVEDREELS ----------
+// ---------- Shot study: break a reel into timestamped shots ----------
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function openShotStudy(projectId, inspId) {
+  const project = state.projects.find((p) => p.id === projectId);
+  const insp = project.inspirations.find((i) => i.id === inspId);
+  state._shotStudy = { projectId, inspId, shots: JSON.parse(JSON.stringify(insp.shots || [])) };
+  const insta = isInstagramUrl(insp.url);
+
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal" style="max-width:760px;">
+        <h3>Shot breakdown</h3>
+        <p class="muted" style="margin-top:4px;font-size:12.5px;">
+          ${insta ? "Instagram embed can't report exact time — type the timestamp as you watch." : ""}
+          Study the reference and log each shot: when it happens, what type, and why it works.
+        </p>
+
+        <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:280px;">
+            <div id="shotVideoHost">
+              ${insta
+                ? `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+                     <iframe src="${escapeAttr(instaEmbedSrc(insp.url))}" style="width:100%;height:460px;border:0;" allowtransparency="true"></iframe>
+                   </div>
+                   <div style="margin-top:8px;">
+                     <button class="btn btn-sm" onclick="document.getElementById('shotUpload').click()">⬆ Upload the video file for exact timestamps</button>
+                     <input type="file" id="shotUpload" accept="video/*" style="display:none;" onchange="loadShotVideo(this.files[0])">
+                   </div>`
+                : `<div class="muted" style="font-size:13px;padding:8px 0;">Upload the reel's video file to capture exact timestamps:</div>
+                   <button class="btn btn-sm" onclick="document.getElementById('shotUpload').click()">⬆ Upload video file</button>
+                   <input type="file" id="shotUpload" accept="video/*" style="display:none;" onchange="loadShotVideo(this.files[0])">`}
+            </div>
+          </div>
+
+          <div style="flex:1;min-width:280px;">
+            <div class="field">
+              <label class="field-label">Timestamp <span id="shotTimeLive" class="muted" style="font-weight:400;"></span></label>
+              <div style="display:flex;gap:6px;">
+                <input type="text" id="shotTime" placeholder="0:03" style="flex:1;" />
+                <button class="btn btn-sm" id="shotGrabBtn" onclick="grabTimestamp()" style="display:none;">⏱ Grab current</button>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Shot type</label>
+              <select id="shotType" class="input-sm" style="width:100%;">
+                <option value="">— pick —</option>
+                ${SHOT_TYPES.map((t) => `<option>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <div class="field" style="flex:1;">
+                <label class="field-label">Angle</label>
+                <select id="shotAngle" class="input-sm" style="width:100%;">
+                  <option value="">—</option>
+                  ${SHOT_ANGLES.map((t) => `<option>${t}</option>`).join("")}
+                </select>
+              </div>
+              <div class="field" style="flex:1;">
+                <label class="field-label">Movement</label>
+                <select id="shotMove" class="input-sm" style="width:100%;">
+                  <option value="">—</option>
+                  ${SHOT_MOVES.map((t) => `<option>${t}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">What's happening / why it works</label>
+              <textarea id="shotNote" rows="2" placeholder="Hook line lands here, tight on face, cuts on the beat..."></textarea>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="addShot()">+ Capture this shot</button>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div class="section-title" style="font-size:13px;">Shots logged</div>
+          <div id="shotList"></div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveShots()">Save breakdown</button>
+        </div>
+      </div>
+    </div>`;
+  renderShotList();
+}
+
+// convert an instagram url to its embeddable src
+function instaEmbedSrc(url) {
+  const m = (url || "").match(/instagram\.com\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
+  return m ? `https://www.instagram.com/reel/${m[2]}/embed/captioned/` : url;
+}
+
+// when a real video file is loaded, swap in a <video> so we can grab exact timestamps
+function loadShotVideo(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  document.getElementById("shotVideoHost").innerHTML = `
+    <video id="shotVideo" src="${url}" controls playsinline style="width:100%;border-radius:8px;background:#000;max-height:460px;"></video>`;
+  const grab = document.getElementById("shotGrabBtn");
+  if (grab) grab.style.display = "inline-block";
+  const v = document.getElementById("shotVideo");
+  const live = document.getElementById("shotTimeLive");
+  v.addEventListener("timeupdate", () => { if (live) live.textContent = "· now at " + fmtTime(v.currentTime); });
+}
+
+function grabTimestamp() {
+  const v = document.getElementById("shotVideo");
+  if (v) document.getElementById("shotTime").value = fmtTime(v.currentTime);
+}
+
+function addShot() {
+  const time = document.getElementById("shotTime").value.trim();
+  const type = document.getElementById("shotType").value;
+  const angle = document.getElementById("shotAngle").value;
+  const move = document.getElementById("shotMove").value;
+  const note = document.getElementById("shotNote").value.trim();
+  if (!time && !type) { alert("Add at least a timestamp or a shot type."); return; }
+  state._shotStudy.shots.push({ id: "s_" + Date.now(), time: time || "0:00", type, angle, move, note });
+  // sort by timestamp (m:ss)
+  state._shotStudy.shots.sort((a, b) => toSec(a.time) - toSec(b.time));
+  document.getElementById("shotTime").value = "";
+  document.getElementById("shotNote").value = "";
+  renderShotList();
+}
+function toSec(t) { const p = String(t).split(":").map(Number); return p.length === 2 ? p[0] * 60 + p[1] : (p[0] || 0); }
+
+function removeShot(id) {
+  state._shotStudy.shots = state._shotStudy.shots.filter((s) => s.id !== id);
+  renderShotList();
+}
+
+function renderShotList() {
+  const shots = state._shotStudy.shots;
+  document.getElementById("shotList").innerHTML = shots.length
+    ? shots.map((s) => `
+      <div style="display:flex;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;align-items:flex-start;">
+        <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
+        <span style="flex:1;min-width:0;">
+          <b style="font-size:13px;">${escapeHtml(s.type || "—")}</b>
+          ${s.angle ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.angle)}</span>` : ""}
+          ${s.move ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.move)}</span>` : ""}
+          ${s.note ? `<span style="display:block;font-size:12px;color:var(--ink-soft);margin-top:2px;">${escapeHtml(s.note)}</span>` : ""}
+        </span>
+        <button class="btn btn-sm" onclick="removeShot('${s.id}')" style="padding:2px 7px;">✕</button>
+      </div>`).join("")
+    : `<div class="muted" style="font-size:12.5px;padding:6px 0;">No shots captured yet.</div>`;
+}
+
+async function saveShots() {
+  const { projectId, inspId, shots } = state._shotStudy;
+  await api(`/projects/${projectId}/inspirations/${inspId}/shots`, { method: "PATCH", body: JSON.stringify({ shots }) });
+  state._shotStudy = null;
+  closeModal();
+  await loadProjects();
+  render();
+}
+
+
 
 // Direct pull: fetch THIS user's vault + notes from the hub, let them pick which to bring in.
 async function pullFromSavedReels(projectId) {
@@ -584,7 +757,33 @@ function renderScript(project, editable) {
     })
     .join("");
 
+  // Reference panel: every shot the user captured across all inspiration reels.
+  const allShots = [];
+  project.inspirations.forEach((i) => {
+    (i.shots || []).forEach((s) => allShots.push({ ...s, from: i.note || i.platform || i.url, url: i.url }));
+  });
+  const shotRef = allShots.length ? `
+    <div class="section" style="background:var(--cream);border:1px solid var(--border);">
+      <div class="section-title" style="font-size:13px;display:flex;align-items:center;gap:8px;">
+        🎬 Shots you studied <span class="chip">${allShots.length}</span>
+        <span class="muted" style="font-weight:400;font-size:11px;">reference while you write — from your inspiration breakdowns</span>
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">
+        ${allShots.map((s) => `
+          <div style="flex:0 0 200px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;">
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
+              <b style="font-size:12.5px;">${escapeHtml(s.type || "—")}</b>
+            </div>
+            ${(s.angle || s.move) ? `<div class="muted" style="font-size:11px;margin-top:3px;">${[s.angle, s.move].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+            ${s.note ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.4;">${escapeHtml(s.note)}</div>` : ""}
+            <div class="muted" style="font-size:10px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↪ ${escapeHtml(s.from)}</div>
+          </div>`).join("")}
+      </div>
+    </div>` : "";
+
   return `
+    ${shotRef}
     <div class="section">
       <div class="section-title">Hook options</div>
       <div class="hook-list">${hooks || '<div class="empty-state">No hooks written yet.</div>'}</div>

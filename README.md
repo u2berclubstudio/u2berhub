@@ -70,3 +70,12 @@ Inside any ContentFlow project's Inspiration stage, **"⚡ Pull my saved reels"*
 creator's own SAVEDREELS vault + notes directly (no CSV). A picker lets them search/filter by
 collection, defaults to the reels they've annotated, and imports selected reels as inspiration
 references — carrying the "why I saved this" note across. All per-user, all server-side.
+
+
+## Shot breakdown (Inspiration -> Script)
+Each inspiration reel has a **Break down shots** button. It opens a study modal with the
+video (Instagram embed, or upload the file for exact timestamps + a "grab current time"
+button). For each shot you capture a timestamp, a shot type / angle / movement from the
+U2berClub shot vocabulary, and a note. Those captured shots then appear as a **reference
+panel at the top of the Script section** — so every dialogue block is written next to the
+actual shots you studied. All per-user, saved with the project.
