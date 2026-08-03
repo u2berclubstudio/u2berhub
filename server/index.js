@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { q, initDb } from "./db/index.js";
 import { hashPassword, verifyPassword, createSession, destroySession, auth, adminOnly, publicUser } from "./auth.js";
 import { TOOLS } from "./tools.js";
+import contentflow from "./contentflow.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -122,6 +123,8 @@ app.post("/api/admin/invites", auth(true), adminOnly, async (req, res) => {
   await q("INSERT INTO invite_codes (code,note,created_by,max_uses) VALUES ($1,$2,$3,$4)", [code, note, req.user.id, maxUses]);
   res.json({ ok: true, code });
 });
+
+app.use("/api/contentflow", contentflow);
 
 /* ---------------- STATIC (built client) ---------------- */
 app.use(express.static(path.join(__dirname, "..", "client", "dist")));

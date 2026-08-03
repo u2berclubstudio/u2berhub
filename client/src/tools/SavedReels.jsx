@@ -972,22 +972,17 @@ Rules:
             </div>
 
             <div className="section">
-              <div className="section-head"><span className="section-idx">{stats.multiCol ? "05" : "04"}</span><span className="section-title">Ask your reels</span></div>
+              <div className="section-head"><span className="section-idx">{stats.multiCol ? "05" : "04"}</span><span className="section-title">Export &amp; manage</span></div>
               <div className="ai">
-                <div className="ai-eyebrow">Claude · content strategist</div>
-                <h3>What do you want to build from this?</h3>
-                <p className="sub">Claude reads your collections + captions. Tell it what to make.</p>
-                <div className="chips">{chips.map((c) => <button key={c} className="chip" onClick={() => { setQ(c); askClaude(c); }}>{c}</button>)}</div>
-                <textarea value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. Turn my top 5 collections into a 2-week U2berClub content calendar…" />
+                <div className="ai-eyebrow">Your vault</div>
+                <h3>Take your planning further</h3>
+                <p className="sub">Export your annotated reels to Notion or a content plan, or swap in a fresh Instagram export.</p>
                 <div className="ai-row">
-                  <button className="btn btn-amber" disabled={loading || !q.trim()} onClick={() => askClaude(q)}>{loading ? <><span className="spin" />&nbsp; Thinking…</> : "Ask Claude"}</button>
-                  <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportNotion}>Export for Notion (.csv)</button>
+                  <button className="btn btn-amber" onClick={exportNotion}>Export for Notion (.csv)</button>
                   <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportPlan}>Export content plan (.md)</button>
                   <button className="btn btn-ghost" style={{ color: "#E7E4DC", borderColor: "#33363F" }} onClick={exportCSV}>Export CSV</button>
                   <button className="muted-link" style={{ marginLeft: "auto" }} onClick={() => { fetch("/api/data/savedreels_vault/records", { method: "DELETE", credentials: "include" }).catch(() => {}); setRecords(null); setVaultState("idle"); setErrors([]); setAnswer(""); setQ(""); setSearch(""); setSelCol(null); }}>Load different files</button>
                 </div>
-                {aiErr && <div style={{ color: "#F0A0A0", fontSize: 13, marginTop: 12 }}>{aiErr}</div>}
-                {answer && <div className="answer">{renderAnswer(answer)}</div>}
               </div>
             </div>
 

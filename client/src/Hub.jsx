@@ -4,7 +4,12 @@ import { api } from "./theme.js";
 export default function Hub({ me, go }) {
   const [tools, setTools] = useState([]);
   useEffect(() => { api.get("/api/tools").then((r) => setTools(r.tools || [])); }, []);
-  const open = (t) => { if (t.status === "live") go("/tool/" + t.id); };
+  const open = (t) => {
+    if (t.status !== "live") return;
+    // ContentFlow is a static sub-app served at /contentflow/; others are in-app routes
+    if (t.id === "contentflow") { window.location.href = "/contentflow/"; return; }
+    go("/tool/" + t.id);
+  };
 
   return (
     <div className="wrap">

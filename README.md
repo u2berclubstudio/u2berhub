@@ -57,3 +57,16 @@ Each creator's uploaded reels are now saved to their account, not just their bro
 - On login from ANY browser/device, it auto-loads — no re-upload needed.
 - "Load different files" clears the stored vault and lets them upload a fresh export.
 - Notes and the vault are stored separately, both per-user, both isolated.
+
+
+## Tools included
+- **SAVEDREELS** — Instagram saved-reel vault, per-user, cross-device.
+- **CONTENTFLOW** — content pipeline tracker (Inspiration → Idea → Script → Shoot → Edit).
+  Served at `/contentflow/`, all data per-user via `/api/contentflow/*` in Postgres.
+
+
+## SAVEDREELS -> CONTENTFLOW wire-up
+Inside any ContentFlow project's Inspiration stage, **"⚡ Pull my saved reels"** fetches the
+creator's own SAVEDREELS vault + notes directly (no CSV). A picker lets them search/filter by
+collection, defaults to the reels they've annotated, and imports selected reels as inspiration
+references — carrying the "why I saved this" note across. All per-user, all server-side.

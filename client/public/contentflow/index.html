@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ContentFlow</title>
+<link rel="stylesheet" href="/contentflow/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" onclick="goBoard()">
+      <span class="brand-mark">CF</span>
+      <span class="brand-name">ContentFlow</span>
+    </div>
+    <div class="topbar-right">
+      <label class="role-label">Viewing as
+        <select id="roleSelect">
+          <option value="strategist">Strategist</option>
+          <option value="videographer">Videographer</option>
+          <option value="editor">Editor</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" id="newProjectBtn">+ New project</button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="modalRoot"></div>
+
+  <script async src="https://www.instagram.com/embed.js"></script>
+  <script src="/contentflow/app.js"></script>
+</body>
+</html>
