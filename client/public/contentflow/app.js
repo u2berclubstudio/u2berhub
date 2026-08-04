@@ -760,17 +760,17 @@ function renderScript(project, editable) {
   // Reference panel: every shot the user captured across all inspiration reels.
   const allShots = [];
   project.inspirations.forEach((i) => {
-    (i.shots || []).forEach((s) => allShots.push({ ...s, from: i.note || i.platform || i.url, url: i.url }));
+    (i.shots || []).forEach((s) => allShots.push({ ...s, from: i.note || i.platform || i.url, url: i.url, inspId: i.id }));
   });
   const shotRef = allShots.length ? `
     <div class="section" style="background:var(--cream);border:1px solid var(--border);">
       <div class="section-title" style="font-size:13px;display:flex;align-items:center;gap:8px;">
         🎬 Shots you studied <span class="chip">${allShots.length}</span>
-        <span class="muted" style="font-weight:400;font-size:11px;">reference while you write — from your inspiration breakdowns</span>
+        <span class="muted" style="font-weight:400;font-size:11px;">${editable ? "click a shot to fill the block form below" : "reference while you write"}</span>
       </div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">
-        ${allShots.map((s) => `
-          <div style="flex:0 0 200px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;">
+        ${allShots.map((s, idx) => `
+          <div ${editable ? `onclick="stampShot(${idx})" style="cursor:pointer;"` : ""} class="shot-ref-card" style="flex:0 0 200px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;transition:.12s;">
             <div style="display:flex;gap:6px;align-items:center;">
               <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
               <b style="font-size:12.5px;">${escapeHtml(s.type || "—")}</b>
@@ -778,9 +778,12 @@ function renderScript(project, editable) {
             ${(s.angle || s.move) ? `<div class="muted" style="font-size:11px;margin-top:3px;">${[s.angle, s.move].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
             ${s.note ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.4;">${escapeHtml(s.note)}</div>` : ""}
             <div class="muted" style="font-size:10px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↪ ${escapeHtml(s.from)}</div>
+            ${editable ? `<div style="font-size:10px;color:var(--amber);margin-top:5px;font-weight:600;">+ use in block</div>` : ""}
           </div>`).join("")}
       </div>
     </div>` : "";
+  // stash for stampShot to read
+  state._scriptShots = allShots;
 
   return `
     ${shotRef}
@@ -829,11 +832,33 @@ function renderAddBlockForm(project) {
   `;
 }
 
+// Click a captured shot -> fill the block form with its type/angle/movement/note.
+function stampShot(idx) {
+  const s = (state._scriptShots || [])[idx];
+  if (!s) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set("block-shottype", s.type || "");
+  set("block-angle", s.angle || "");
+  set("block-movement", s.move || "");
+  // carry the study note into props/notes without clobbering anything already typed
+  const props = document.getElementById("block-props");
+  if (props) {
+    const ref = `ref ${s.time}${s.note ? ": " + s.note : ""}`;
+    props.value = props.value.trim() ? props.value + " · " + ref : ref;
+  }
+  // if this shot came from a known inspiration reel, preselect it in the ref dropdown
+  const ref = document.getElementById("block-ref");
+  if (ref && s.inspId) { ref.value = s.inspId; }
+  // pull focus to the dialogue field so they can type the line for this shot
+  const dlg = document.getElementById("block-dialogue");
+  if (dlg) { dlg.scrollIntoView({ behavior: "smooth", block: "center" }); dlg.focus(); }
+}
+
+
 async function selectHook(id, hookId) {
   await api(`/projects/${id}/hooks/${hookId}/select`, { method: "POST" });
   await loadProjects();
-  render();
-}
+  render();}
 
 async function addHook(id) {
   const text = document.getElementById("hook-text").value;

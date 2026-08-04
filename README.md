@@ -78,4 +78,5 @@ video (Instagram embed, or upload the file for exact timestamps + a "grab curren
 button). For each shot you capture a timestamp, a shot type / angle / movement from the
 U2berClub shot vocabulary, and a note. Those captured shots then appear as a **reference
 panel at the top of the Script section** — so every dialogue block is written next to the
-actual shots you studied. All per-user, saved with the project.
+actual shots you studied. **Click any captured shot** to stamp its type / angle / movement
+(and note) straight into the block form below — no re-typing. All per-user, saved with the project.

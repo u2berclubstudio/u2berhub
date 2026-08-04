@@ -218,3 +218,6 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 .input-sm:focus { outline: none; border-color: var(--amber); }
 .muted { color: var(--ink-soft); }
 .chip { display: inline-block; background: var(--cream); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; color: var(--ink-soft); font-family: inherit; }
+
+/* clickable captured-shot cards */
+.shot-ref-card:hover { border-color: var(--amber) !important; box-shadow: 0 2px 6px rgba(232,133,43,.12); }
