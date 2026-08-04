@@ -38,3 +38,14 @@ CREATE TABLE IF NOT EXISTS tool_data (
   PRIMARY KEY (user_id, tool, key)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_data_user_tool ON tool_data(user_id, tool);
+
+-- Canvas frame images (screenshots). Stored separately so the project JSON stays small.
+CREATE TABLE IF NOT EXISTS canvas_images (
+  id          TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  project_id  TEXT NOT NULL,
+  mime        TEXT NOT NULL DEFAULT 'image/jpeg',
+  data        BYTEA NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_images_user ON canvas_images(user_id, project_id);

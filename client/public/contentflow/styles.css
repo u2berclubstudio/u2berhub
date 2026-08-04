@@ -221,3 +221,54 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 
 /* clickable captured-shot cards */
 .shot-ref-card:hover { border-color: var(--amber) !important; box-shadow: 0 2px 6px rgba(232,133,43,.12); }
+
+/* ============ Mood canvas ============ */
+.mood-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 460px;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.03) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(rgba(0,0,0,.03) 1px, transparent 1px) 0 0 / 24px 24px,
+    var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.canvas-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 13px; text-align: center; padding: 20px;
+}
+.frame {
+  position: absolute;
+  background: #fff;
+  border: 2px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+}
+.frame:active { cursor: grabbing; }
+.frame-img { width: 100%; display: block; background: #000; }
+.frame-img-empty {
+  height: 90px; display: flex; align-items: center; justify-content: center;
+  color: #aaa; font-size: 11px; background: #f4f1ea;
+}
+.frame-body { padding: 7px 9px; }
+.frame-tag {
+  position: absolute; top: 0; left: 0; z-index: 2;
+  color: #fff; font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; padding: 2px 7px; border-bottom-right-radius: 7px;
+}
+.frame-tools {
+  position: absolute; top: 4px; right: 4px; display: none; gap: 3px; z-index: 3;
+}
+.frame:hover .frame-tools { display: flex; }
+.frame-tools button {
+  width: 22px; height: 22px; border: none; border-radius: 5px;
+  background: rgba(21,23,30,.82); color: #fff; cursor: pointer; font-size: 11px;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.frame-tools button:hover { background: var(--amber); }

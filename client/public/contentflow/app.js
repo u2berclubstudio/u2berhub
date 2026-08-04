@@ -179,6 +179,242 @@ const SHOT_TYPES = ["Extreme close-up", "Close-up", "Medium close-up", "Medium",
 const SHOT_ANGLES = ["Eye-level", "Low angle", "High angle", "Dutch / tilted", "Overhead / top-down"];
 const SHOT_MOVES = ["Static", "Handheld", "Pan", "Tilt", "Push in", "Pull out", "Snap zoom", "Whip / whip-pan", "Tracking / follow", "Orbit"];
 
+// ============ CANVAS BOARD (free-drag inspiration board) ============
+const TAG_COLORS = [
+  { id: "hook",  label: "Hook",   color: "#E8852B" },
+  { id: "broll", label: "B-roll", color: "#2D7384" },
+  { id: "talk",  label: "Talking",color: "#7A4FA3" },
+  { id: "text",  label: "Text/GFX",color: "#3F8F5B" },
+  { id: "trans", label: "Transition",color: "#C24A5B" },
+  { id: "end",   label: "CTA/End",color: "#D9A226" },
+];
+function tagById(id) { return TAG_COLORS.find((t) => t.id === id); }
+
+function renderCanvasBoard(project, editable) {
+  const frames = (project.canvas && project.canvas.frames) || [];
+  return `
+    <div class="section" style="padding-bottom:10px;">
+      <div class="section-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        🎨 Mood canvas <span class="chip">${frames.length}</span>
+        <span class="muted" style="font-weight:400;font-size:11px;">drag frames around · capture from video · tag by role</span>
+        ${editable ? `
+        <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="openCaptureModal('${project.id}')">🎬 Capture from video</button>
+          <button class="btn btn-sm" onclick="document.getElementById('canvasImgUpload').click()">🖼 Add image</button>
+          <button class="btn btn-sm" onclick="addTextFrame('${project.id}')">🗒 Add note</button>
+          <input type="file" id="canvasImgUpload" accept="image/*" multiple style="display:none;" onchange="uploadCanvasImages('${project.id}', this.files)">
+        </span>` : ""}
+      </div>
+      <div id="canvas-${project.id}" class="mood-canvas" ${editable ? `ondragover="event.preventDefault()"` : ""}>
+        ${frames.length ? frames.map((f) => renderFrame(project.id, f, editable)).join("") :
+          `<div class="canvas-empty">Capture a shot from a video or drop an image to start your board.</div>`}
+      </div>
+    </div>`;
+}
+
+function renderFrame(projectId, f, editable) {
+  const tag = f.tag ? tagById(f.tag) : null;
+  const x = f.x || 20, y = f.y || 20, w = f.w || 200;
+  const imgSrc = f.imageId ? `/api/contentflow/images/${f.imageId}` : null;
+  return `
+    <div class="frame" data-fid="${f.id}" style="left:${x}px;top:${y}px;width:${w}px;${tag ? `border-color:${tag.color};` : ""}"
+      ${editable ? `onmousedown="frameDragStart(event,'${projectId}','${f.id}')"` : ""}>
+      ${tag ? `<div class="frame-tag" style="background:${tag.color};">${tag.label}</div>` : ""}
+      ${imgSrc ? `<img src="${imgSrc}" class="frame-img" draggable="false" />` :
+        (f.type === "text" ? "" : `<div class="frame-img frame-img-empty">no image</div>`)}
+      <div class="frame-body">
+        ${f.time ? `<span class="chip" style="font-family:monospace;font-size:10px;">${escapeHtml(f.time)}</span>` : ""}
+        ${f.shotType ? `<b style="font-size:11.5px;"> ${escapeHtml(f.shotType)}</b>` : ""}
+        ${(f.angle || f.move) ? `<div class="muted" style="font-size:10px;">${[f.angle, f.move].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+        ${f.note ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:3px;line-height:1.35;">${escapeHtml(f.note)}</div>` : ""}
+      </div>
+      ${editable ? `
+      <div class="frame-tools">
+        <button title="Edit" onmousedown="event.stopPropagation()" onclick="editFrame('${projectId}','${f.id}')">✎</button>
+        <button title="Tag" onmousedown="event.stopPropagation()" onclick="cycleTag('${projectId}','${f.id}')">🎨</button>
+        <button title="Delete" onmousedown="event.stopPropagation()" onclick="deleteFrame('${projectId}','${f.id}')">✕</button>
+      </div>` : ""}
+    </div>`;
+}
+
+// ---- canvas state helpers ----
+function getProject(pid) { return state.projects.find((p) => p.id === pid); }
+function getFrames(pid) { const p = getProject(pid); return (p.canvas && p.canvas.frames) || []; }
+async function saveCanvas(pid) {
+  const frames = getFrames(pid);
+  await api(`/projects/${pid}/canvas`, { method: "PATCH", body: JSON.stringify({ frames }) });
+}
+function setFrames(pid, frames) {
+  const p = getProject(pid);
+  p.canvas = p.canvas || {}; p.canvas.frames = frames;
+}
+
+// ---- drag ----
+let _drag = null;
+function frameDragStart(e, pid, fid) {
+  if (e.button !== 0) return;
+  const el = e.currentTarget;
+  const canvas = document.getElementById("canvas-" + pid);
+  const cRect = canvas.getBoundingClientRect();
+  const fRect = el.getBoundingClientRect();
+  _drag = { pid, fid, el, offX: e.clientX - fRect.left, offY: e.clientY - fRect.top, cRect };
+  el.style.zIndex = 999;
+  document.addEventListener("mousemove", frameDragMove);
+  document.addEventListener("mouseup", frameDragEnd);
+  e.preventDefault();
+}
+function frameDragMove(e) {
+  if (!_drag) return;
+  let x = e.clientX - _drag.cRect.left - _drag.offX;
+  let y = e.clientY - _drag.cRect.top - _drag.offY;
+  x = Math.max(0, x); y = Math.max(0, y);
+  _drag.el.style.left = x + "px"; _drag.el.style.top = y + "px";
+}
+function frameDragEnd() {
+  if (!_drag) return;
+  const { pid, fid, el } = _drag;
+  const x = parseInt(el.style.left), y = parseInt(el.style.top);
+  const frames = getFrames(pid).map((f) => f.id === fid ? { ...f, x, y } : f);
+  setFrames(pid, frames);
+  el.style.zIndex = "";
+  document.removeEventListener("mousemove", frameDragMove);
+  document.removeEventListener("mouseup", frameDragEnd);
+  _drag = null;
+  saveCanvas(pid); // persist new position
+}
+
+// ---- add frames ----
+function newFrameId() { return "f_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6); }
+function nextPos(pid) {
+  const n = getFrames(pid).length;
+  return { x: 20 + (n % 4) * 220, y: 20 + Math.floor(n / 4) * 200 };
+}
+
+async function uploadCanvasImages(pid, fileList) {
+  const files = Array.from(fileList || []);
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
+    const { id } = await api(`/projects/${pid}/canvas/images`, { method: "POST", body: JSON.stringify({ data: dataUrl, mime: file.type }) });
+    const pos = nextPos(pid);
+    const frames = [...getFrames(pid), { id: newFrameId(), type: "image", imageId: id, x: pos.x, y: pos.y, w: 200 }];
+    setFrames(pid, frames);
+  }
+  await saveCanvas(pid);
+  render();
+}
+
+function addTextFrame(pid) {
+  const note = prompt("Note text:");
+  if (note == null) return;
+  const pos = nextPos(pid);
+  setFrames(pid, [...getFrames(pid), { id: newFrameId(), type: "text", note, x: pos.x, y: pos.y, w: 180 }]);
+  saveCanvas(pid); render();
+}
+
+function deleteFrame(pid, fid) {
+  const f = getFrames(pid).find((x) => x.id === fid);
+  if (f && f.imageId) api(`/projects/${pid}/canvas/images/${f.imageId}`, { method: "DELETE" }).catch(() => {});
+  setFrames(pid, getFrames(pid).filter((x) => x.id !== fid));
+  saveCanvas(pid); render();
+}
+
+function cycleTag(pid, fid) {
+  const order = [null, ...TAG_COLORS.map((t) => t.id)];
+  setFrames(pid, getFrames(pid).map((f) => {
+    if (f.id !== fid) return f;
+    const cur = order.indexOf(f.tag || null);
+    return { ...f, tag: order[(cur + 1) % order.length] };
+  }));
+  saveCanvas(pid); render();
+}
+
+function editFrame(pid, fid) {
+  const f = getFrames(pid).find((x) => x.id === fid);
+  if (!f) return;
+  state._editFrame = { pid, fid };
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal" style="max-width:420px;">
+        <h3>Frame details</h3>
+        <div class="field"><label class="field-label">Timestamp</label><input id="ef-time" class="input-sm" style="width:100%;" value="${escapeAttr(f.time || "")}" placeholder="0:03"></div>
+        <div class="field"><label class="field-label">Shot type</label>
+          <select id="ef-type" class="input-sm" style="width:100%;"><option value="">—</option>${SHOT_TYPES.map((t) => `<option ${f.shotType === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        <div style="display:flex;gap:8px;">
+          <div class="field" style="flex:1;"><label class="field-label">Angle</label>
+            <select id="ef-angle" class="input-sm" style="width:100%;"><option value="">—</option>${SHOT_ANGLES.map((t) => `<option ${f.angle === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+          <div class="field" style="flex:1;"><label class="field-label">Movement</label>
+            <select id="ef-move" class="input-sm" style="width:100%;"><option value="">—</option>${SHOT_MOVES.map((t) => `<option ${f.move === t ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+        </div>
+        <div class="field"><label class="field-label">Note</label><textarea id="ef-note" rows="2">${escapeHtml(f.note || "")}</textarea></div>
+        <div class="field"><label class="field-label">Tag</label>
+          <select id="ef-tag" class="input-sm" style="width:100%;"><option value="">— none —</option>${TAG_COLORS.map((t) => `<option value="${t.id}" ${f.tag === t.id ? "selected" : ""}>${t.label}</option>`).join("")}</select></div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveFrameEdit()">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+function saveFrameEdit() {
+  const { pid, fid } = state._editFrame;
+  const g = (id) => document.getElementById(id).value;
+  setFrames(pid, getFrames(pid).map((f) => f.id === fid ? {
+    ...f, time: g("ef-time"), shotType: g("ef-type"), angle: g("ef-angle"), move: g("ef-move"), note: g("ef-note"), tag: g("ef-tag") || null,
+  } : f));
+  state._editFrame = null; closeModal(); saveCanvas(pid); render();
+}
+
+// ---- capture from an uploaded video ----
+function openCaptureModal(pid) {
+  state._capture = { pid };
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal" style="max-width:640px;">
+        <h3>Capture frames from video</h3>
+        <p class="muted" style="font-size:12.5px;margin-top:4px;">Upload the reel's video, scrub to a moment, and grab the exact frame as an image on your canvas.</p>
+        <div id="capHost" style="margin-top:10px;">
+          <button class="btn btn-sm" onclick="document.getElementById('capFile').click()">⬆ Upload video file</button>
+          <input type="file" id="capFile" accept="video/*" style="display:none;" onchange="capLoadVideo(this.files[0])">
+        </div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button class="btn" onclick="closeModal()">Done</button>
+        </div>
+      </div>
+    </div>`;
+}
+function capLoadVideo(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  document.getElementById("capHost").innerHTML = `
+    <video id="capVideo" src="${url}" controls playsinline style="width:100%;border-radius:8px;background:#000;max-height:420px;"></video>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+      <button class="btn btn-primary btn-sm" onclick="grabFrame()">📸 Grab this frame → canvas</button>
+      <span id="capTime" class="muted" style="font-size:12px;font-family:monospace;"></span>
+    </div>
+    <div id="capThumbs" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>`;
+  const v = document.getElementById("capVideo");
+  v.addEventListener("timeupdate", () => { document.getElementById("capTime").textContent = fmtTime(v.currentTime); });
+}
+async function grabFrame() {
+  const v = document.getElementById("capVideo");
+  if (!v) return;
+  const canvas = document.createElement("canvas");
+  const w = 320, h = Math.round(w * (v.videoHeight / v.videoWidth)) || 480;
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(v, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+  const time = fmtTime(v.currentTime);
+  const { pid } = state._capture;
+  const { id } = await api(`/projects/${pid}/canvas/images`, { method: "POST", body: JSON.stringify({ data: dataUrl, mime: "image/jpeg" }) });
+  const pos = nextPos(pid);
+  setFrames(pid, [...getFrames(pid), { id: newFrameId(), type: "image", imageId: id, time, x: pos.x, y: pos.y, w: 200 }]);
+  await saveCanvas(pid);
+  // little confirmation thumb in the modal
+  const thumbs = document.getElementById("capThumbs");
+  if (thumbs) thumbs.innerHTML += `<div style="position:relative;"><img src="${dataUrl}" style="height:56px;border-radius:5px;border:1px solid var(--border);"><span class="chip" style="position:absolute;bottom:2px;left:2px;font-size:9px;">${time}</span></div>`;
+}
+
 function renderInspiration(project, editable) {
   const items = project.inspirations
     .map((i) => {
@@ -201,6 +437,7 @@ function renderInspiration(project, editable) {
     .join("");
 
   return `
+    ${renderCanvasBoard(project, editable)}
     <div class="section">
       <div class="section-title">Reference reels &amp; why they work</div>
       ${items || '<div class="empty-state">No inspiration added yet.</div>'}

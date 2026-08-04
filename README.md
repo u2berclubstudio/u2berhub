@@ -80,3 +80,15 @@ U2berClub shot vocabulary, and a note. Those captured shots then appear as a **r
 panel at the top of the Script section** — so every dialogue block is written next to the
 actual shots you studied. **Click any captured shot** to stamp its type / angle / movement
 (and note) straight into the block form below — no re-typing. All per-user, saved with the project.
+
+
+## Mood canvas (Inspiration)
+The Inspiration stage has a free-drag **mood canvas** (Milanote/Figma-style):
+- **Capture from video** — upload a reel, scrub to a moment, grab the exact frame as an image on the board.
+- **Add image** — upload your own screenshots.
+- **Add note** — text frames.
+- Drag frames anywhere; positions persist. Each frame carries a timestamp, shot type / angle /
+  movement (from the shot vocabulary), a note, and a **color role tag** (Hook, B-roll, Talking,
+  Text/GFX, Transition, CTA/End).
+- Images are stored in a dedicated `canvas_images` table (not the project JSON), per-user and
+  access-controlled — one user can't fetch another's frame.

@@ -72,6 +72,48 @@ router.delete("/projects/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Canvas: free-drag inspiration board ----
+// Save the whole canvas layout for a project (frames = positions, tags, shot details).
+// Images themselves live in canvas_images, referenced by imageId — keeps this JSON small.
+router.patch("/projects/:id/canvas", (req, res) => withProject(req, res, (project) => {
+  project.canvas = {
+    frames: Array.isArray(req.body.frames) ? req.body.frames : [],
+    updatedAt: Date.now(),
+  };
+  return project.canvas;
+}));
+
+// Upload one screenshot (base64). Returns an imageId the canvas frame points at.
+router.post("/projects/:id/canvas/images", async (req, res) => {
+  const projects = await loadProjects(req.user.id);
+  if (!projects.find((p) => p.id === req.params.id)) return res.status(404).json({ error: "Not found" });
+  const b64 = String(req.body.data || "").replace(/^data:[^;]+;base64,/, "");
+  if (!b64) return res.status(400).json({ error: "No image data." });
+  const buf = Buffer.from(b64, "base64");
+  if (buf.length > 5 * 1024 * 1024) return res.status(413).json({ error: "Image too large (max 5MB)." });
+  const id = "img_" + Math.random().toString(36).slice(2, 11);
+  const mime = (req.body.mime || "image/jpeg").slice(0, 40);
+  await q("INSERT INTO canvas_images (id,user_id,project_id,mime,data) VALUES ($1,$2,$3,$4,$5)",
+    [id, req.user.id, req.params.id, mime, buf]);
+  res.json({ id });
+});
+
+// Serve an image by id — only to its owner.
+router.get("/images/:imgId", async (req, res) => {
+  const { rows } = await q("SELECT mime, data FROM canvas_images WHERE id=$1 AND user_id=$2",
+    [req.params.imgId, req.user.id]);
+  if (!rows.length) return res.status(404).end();
+  res.set("Content-Type", rows[0].mime);
+  res.set("Cache-Control", "private, max-age=86400");
+  res.send(rows[0].data);
+});
+
+router.delete("/projects/:id/canvas/images/:imgId", async (req, res) => {
+  await q("DELETE FROM canvas_images WHERE id=$1 AND user_id=$2 AND project_id=$3",
+    [req.params.imgId, req.user.id, req.params.id]);
+  res.json({ ok: true });
+});
+
 // ---- Inspirations ----
 router.post("/projects/:id/inspirations", (req, res) => withProject(req, res, (project) => {
   const item = { id: uid("i"), url: req.body.url || "", platform: req.body.platform || "", note: req.body.note || "", shots: [] };
