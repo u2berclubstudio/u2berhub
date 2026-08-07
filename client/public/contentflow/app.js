@@ -1,10 +1,11 @@
-const STAGES = ["inspiration", "idea", "script", "shoot", "edit"];
+const STAGES = ["idea", "inspiration", "script", "shoot", "edit", "post"];
 const STAGE_LABELS = {
-  inspiration: "Inspiration",
   idea: "Idea",
+  inspiration: "Inspiration",
   script: "Script",
   shoot: "Shoot",
   edit: "Edit",
+  post: "Post",
 };
 
 const state = {
@@ -36,7 +37,7 @@ async function loadProjects() {
 // ---------- Role permissions ----------
 // Which stages a role is allowed to EDIT. Every role can always VIEW every stage (read-only elsewhere).
 const EDIT_PERMISSIONS = {
-  strategist: ["inspiration", "idea", "script", "shoot", "edit"],
+  strategist: ["idea", "inspiration", "script", "shoot", "edit", "post"],
   videographer: ["shoot"],
   editor: ["edit"],
 };
@@ -116,12 +117,16 @@ function renderDetail(project) {
         <div class="detail-brand">${escapeHtml(project.brand || "")}</div>
         <h1 class="detail-title">${escapeHtml(project.title)}</h1>
       </div>
-      <select onchange="changeStage('${project.id}', this.value)" style="height:36px;">
-        ${STAGES.map((s) => `<option value="${s}" ${project.stage === s ? "selected" : ""}>${STAGE_LABELS[s]}</option>`).join("")}
-        <option value="done" ${project.stage === "done" ? "selected" : ""}>Done</option>
-      </select>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select onchange="changeStage('${project.id}', this.value)" style="height:36px;">
+          ${STAGES.map((s) => `<option value="${s}" ${project.stage === s ? "selected" : ""}>${STAGE_LABELS[s]}</option>`).join("")}
+          <option value="done" ${project.stage === "done" ? "selected" : ""}>Done</option>
+        </select>
+        <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="confirmDeleteProject('${project.id}')">🗑 Delete</button>
+      </div>
     </div>
     <div class="stepper">${tabs}</div>
+    ${renderStageDateBar(project)}
     <div id="tabContent"></div>
   `;
 
@@ -137,9 +142,109 @@ function renderDetail(project) {
   else if (state.activeTab === "script") body = renderScript(project, editable);
   else if (state.activeTab === "shoot") body = renderShoot(project, editable);
   else if (state.activeTab === "edit") body = renderEdit(project, editable);
+  else if (state.activeTab === "post") body = renderPost(project, editable);
 
   contentEl.innerHTML = banner + body;
   processInstagramEmbeds();
+}
+
+// A small bar under the tabs: the date THIS stage was worked on (editable).
+function renderStageDateBar(project) {
+  const stage = state.activeTab;
+  if (!stage || stage === "done") return "";
+  const dates = project.stageDates || {};
+  const val = dates[stage] || "";
+  const editable = canEdit(stage);
+  return `
+    <div class="stage-datebar">
+      <span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">${STAGE_LABELS[stage]} started</span>
+      <input type="date" class="input-sm" value="${escapeAttr(val)}" ${editable ? "" : "disabled"}
+        onchange="setStageDate('${project.id}','${stage}',this.value)" />
+      ${val ? `<span class="muted" style="font-size:11px;">${fmtDate(val)}</span>` : `<span class="muted" style="font-size:11px;">not set</span>`}
+    </div>`;
+}
+function fmtDate(d) {
+  if (!d) return "";
+  try { return new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return d; }
+}
+async function setStageDate(pid, stage, date) {
+  await api(`/projects/${pid}/stage-date`, { method: "PATCH", body: JSON.stringify({ stage, date }) });
+  await loadProjects();
+  render();
+}
+
+function confirmDeleteProject(pid) {
+  const p = getProject(pid);
+  if (!confirm(`Delete "${p ? p.title : "this project"}"?\n\nThis permanently removes the project and all its data — inspirations, canvas frames, script, shots, and post results. This cannot be undone.`)) return;
+  deleteProjectNow(pid);
+}
+async function deleteProjectNow(pid) {
+  await api(`/projects/${pid}`, { method: "DELETE" });
+  await loadProjects();
+  goBoard();
+}
+
+// ---------- Post / results stage ----------
+function renderPost(project, editable) {
+  const p = project.post || {};
+  const dis = editable ? "" : "disabled";
+  const shotSrc = p.retentionShotId ? `/api/contentflow/images/${p.retentionShotId}` : null;
+  const field = (label, key, ph, hint) => `
+    <div class="field">
+      <label class="field-label">${label}${hint ? ` <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0;">— ${hint}</span>` : ""}</label>
+      <input type="text" id="post-${key}" ${dis} value="${escapeAttr(p[key] || "")}" placeholder="${ph}">
+    </div>`;
+  return `
+    <div class="section">
+      <div class="section-title">Results &amp; analytics</div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 14px;">Once it's live, log how it actually performed. Instagram doesn't expose this for you to pull automatically — type in what you see, same as TEARDOWN.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:150px;">${field("Posted on", "postedDate", "", "")}</div>
+        <div style="flex:2;min-width:220px;">${field("Post URL", "url", "https://instagram.com/reel/...", "")}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        ${field("Views", "views", "240K", "")}
+        ${field("Watch time", "watchTime", "12s avg", "average")}
+        ${field("Retention", "retention", "48%", "% who stayed")}
+        ${field("Saves", "saves", "6,200", "")}
+        ${field("Shares", "shares", "4,100", "")}
+        ${field("Comments", "comments", "320", "")}
+      </div>
+      <div class="field">
+        <label class="field-label">Notes — what worked, what you'd change</label>
+        <textarea id="post-notes" ${dis} rows="2" placeholder="Hook held for 3s then dropped; CTA at the end drove the saves...">${escapeHtml(p.notes || "")}</textarea>
+      </div>
+      ${editable ? `<button class="btn btn-primary btn-sm" onclick="savePost('${project.id}')">Save results</button>` : ""}
+    </div>
+
+    <div class="section">
+      <div class="section-title">Retention screenshot</div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Upload the retention graph from Instagram Insights — the shape of where people dropped off is the real lesson.</p>
+      ${shotSrc ? `
+        <div style="position:relative;display:inline-block;">
+          <img src="${shotSrc}" style="max-width:100%;max-height:420px;border:1px solid var(--border);border-radius:8px;display:block;">
+          ${editable ? `<button class="btn btn-sm" style="margin-top:8px;" onclick="document.getElementById('retentionUpload').click()">Replace screenshot</button>` : ""}
+        </div>` : (editable ? `
+        <button class="btn btn-sm" onclick="document.getElementById('retentionUpload').click()">⬆ Upload retention screenshot</button>` : `<div class="muted" style="font-size:13px;">No screenshot uploaded.</div>`)}
+      ${editable ? `<input type="file" id="retentionUpload" accept="image/*" style="display:none;" onchange="uploadRetention('${project.id}', this.files[0])">` : ""}
+    </div>`;
+}
+
+async function savePost(pid) {
+  const g = (k) => (document.getElementById("post-" + k) || {}).value || "";
+  const body = { postedDate: g("postedDate"), url: g("url"), views: g("views"), watchTime: g("watchTime"),
+    retention: g("retention"), saves: g("saves"), shares: g("shares"), comments: g("comments"), notes: g("notes") };
+  await api(`/projects/${pid}/post`, { method: "PATCH", body: JSON.stringify(body) });
+  await loadProjects();
+  render();
+}
+async function uploadRetention(pid, file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const dataUrl = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); });
+  await api(`/projects/${pid}/post/screenshot`, { method: "POST", body: JSON.stringify({ data: dataUrl, mime: file.type }) });
+  await loadProjects();
+  render();
 }
 
 // ---------- Instagram embeds ----------

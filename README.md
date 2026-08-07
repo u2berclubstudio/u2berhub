@@ -92,3 +92,14 @@ The Inspiration stage has a free-drag **mood canvas** (Milanote/Figma-style):
   Text/GFX, Transition, CTA/End).
 - Images are stored in a dedicated `canvas_images` table (not the project JSON), per-user and
   access-controlled — one user can't fetch another's frame.
+
+
+## Project lifecycle (Idea-first + Post stage + dates + delete)
+- Stages reordered: **Idea → Inspiration → Script → Shoot → Edit → Post** (a project starts
+  with the raw idea, then gathers inspiration for it).
+- **Per-stage date bar** under the tabs on every stage — manually set when you started each
+  stage, building a real timeline of the project's life.
+- New **Post stage**: log views, watch time, retention %, saves, shares, comments, post URL
+  and notes, plus upload the **retention screenshot** from Instagram Insights.
+- **Delete project** button (with confirm) removes the project and all its data.
+- Old projects auto-backfill the new fields on load, so nothing breaks on deploy.

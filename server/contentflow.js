@@ -11,7 +11,14 @@ async function loadProjects(userId) {
   const { rows } = await q(
     "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='projects'", [userId]);
   const v = rows[0]?.value;
-  return Array.isArray(v?.projects) ? v.projects : [];
+  const projects = Array.isArray(v?.projects) ? v.projects : [];
+  // backfill fields added in later versions so older projects don't break
+  for (const p of projects) {
+    if (!p.stageDates) p.stageDates = { idea: "", inspiration: "", script: "", shoot: "", edit: "", post: "" };
+    else for (const k of ["idea", "inspiration", "script", "shoot", "edit", "post"]) if (!(k in p.stageDates)) p.stageDates[k] = "";
+    if (!p.post) p.post = { postedDate: "", url: "", views: "", watchTime: "", retention: "", saves: "", shares: "", comments: "", notes: "", retentionShotId: "" };
+  }
+  return projects;
 }
 async function saveProjects(userId, projects) {
   await q(
@@ -50,13 +57,15 @@ router.post("/projects", async (req, res) => {
     id: uid("p"),
     title: req.body.title || "Untitled",
     brand: req.body.brand || "",
-    stage: "inspiration",
+    stage: "idea",
     createdAt: new Date().toISOString(),
+    stageDates: { idea: "", inspiration: "", script: "", shoot: "", edit: "", post: "" },
     inspirations: [],
     idea: { rawIdea: "", angle: "", linkedInspirationIds: [] },
     script: { hooks: [], blocks: [] },
     shoot: { date: "", location: "", generalNotes: "", shots: [] },
     edit: { footageLink: "", musicNotes: "", pacingNotes: "", checklist: [], finalLink: "" },
+    post: { postedDate: "", url: "", views: "", watchTime: "", retention: "", saves: "", shares: "", comments: "", notes: "", retentionShotId: "" },
   };
   projects.unshift(project);
   await saveProjects(req.user.id, projects);
@@ -198,5 +207,40 @@ router.patch("/projects/:id/edit-checklist/:index", (req, res) => withProject(re
 router.patch("/projects/:id/idea", (req, res) => withProject(req, res, (project) => {
   Object.assign(project.idea, req.body); return project.idea;
 }));
+
+// Manually set/edit the date a stage was worked on.
+router.patch("/projects/:id/stage-date", (req, res) => withProject(req, res, (project) => {
+  const { stage, date } = req.body;
+  const valid = ["idea", "inspiration", "script", "shoot", "edit", "post"];
+  if (!valid.includes(stage)) throw Object.assign(new Error("Unknown stage"), { code: 400 });
+  project.stageDates = project.stageDates || {};
+  project.stageDates[stage] = date || "";
+  return project.stageDates;
+}));
+
+// Post / results stage: analytics + retention screenshot reference.
+router.patch("/projects/:id/post", (req, res) => withProject(req, res, (project) => {
+  project.post = project.post || {};
+  Object.assign(project.post, req.body);
+  return project.post;
+}));
+
+// Upload the retention screenshot for the Post stage (reuses canvas_images storage).
+router.post("/projects/:id/post/screenshot", async (req, res) => {
+  const projects = await loadProjects(req.user.id);
+  const project = projects.find((p) => p.id === req.params.id);
+  if (!project) return res.status(404).json({ error: "Not found" });
+  const b64 = String(req.body.data || "").replace(/^data:[^;]+;base64,/, "");
+  if (!b64) return res.status(400).json({ error: "No image data." });
+  const buf = Buffer.from(b64, "base64");
+  if (buf.length > 5 * 1024 * 1024) return res.status(413).json({ error: "Image too large (max 5MB)." });
+  const id = "img_" + Math.random().toString(36).slice(2, 11);
+  await q("INSERT INTO canvas_images (id,user_id,project_id,mime,data) VALUES ($1,$2,$3,$4,$5)",
+    [id, req.user.id, req.params.id, req.body.mime || "image/jpeg", buf]);
+  project.post = project.post || {};
+  project.post.retentionShotId = id;
+  await saveProjects(req.user.id, projects);
+  res.json({ id });
+});
 
 export default router;
