@@ -329,7 +329,7 @@ function Modal({ children, onClose }) {
 }
 
 function AddReelModal({ onClose, onDone }) {
-  const [f, setF] = useState({ url: "", trend_name: "", trend_desc: "", reels_count: "", publish_date: "", category: "", tags: "", caption: "" });
+  const [f, setF] = useState({ url: "", trend_name: "", trend_desc: "", reels_count: "", publish_date: "", audio_name: "", audio_url: "", category: "", tags: "", caption: "" });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
@@ -351,6 +351,10 @@ function AddReelModal({ onClose, onDone }) {
       <div style={{ display: "flex", gap: 10 }}>
         <div className="field" style={{ flex: 1 }}><label className="lbl">Reels made with it</label><input className="inp" value={f.reels_count} onChange={set("reels_count")} placeholder="12K" /></div>
         <div className="field" style={{ flex: 1 }}><label className="lbl">Date of publish</label><input className="inp" type="date" value={f.publish_date} onChange={set("publish_date")} /></div>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div className="field" style={{ flex: 1 }}><label className="lbl">Audio / sound</label><input className="inp" value={f.audio_name} onChange={set("audio_name")} placeholder="I Feel Love – Donna Summer" /></div>
+        <div className="field" style={{ flex: 1 }}><label className="lbl">Audio link</label><input className="inp" value={f.audio_url} onChange={set("audio_url")} placeholder="https://instagram.com/reels/audio/..." /></div>
       </div>
       <div className="field"><label className="lbl">Category</label><input className="inp" value={f.category} onChange={set("category")} placeholder="Restaurant, Fitness, Fashion…" /></div>
       <div className="field"><label className="lbl">Tags</label><input className="inp" value={f.tags} onChange={set("tags")} placeholder="hook transition food" /></div>

@@ -122,8 +122,14 @@ The first tool with **deliberately shared** data.
   `noindex` since lists are unlisted rather than fully public.
 
 
-### Trend entries publish as an article
+### Trend entries publish as an article (magazine style)
 Each reel in the directory carries **trend name**, **description of the trend**, **how many
 reels were made with it**, and a **publish date**. A published list renders as an article —
 each trend is a section: heading, description paragraph, stats line, the reel embed beside
 the curator's "why it works" and "hook points", tags, and a Watch-the-reel link.
+
+Published lists render as a dated roundup: a **Content** table of contents, entries grouped
+under **month headings** (newest first), and each trend as *Trend: Name — 7 August 2026*
+with a bold **Trend Recap:** paragraph, an **Audio:** line linking the sound, a stats line,
+the reel embed, a Watch-on-Instagram link, then the curator's Why-it-works / Hook-points notes.
+Fields per trend: trend name, description, reels made with it, publish date, audio name + link.

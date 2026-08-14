@@ -68,7 +68,7 @@ router.get("/public/:username/:slug", async (req, res) => {
     // The creator chose to publish, so their notes travel with the list.
     const { rows: items } = await q(
       `SELECT r.id, r.url, r.shortcode, r.category, r.tags, r.caption,
-              r.trend_name, r.trend_desc, r.reels_count, r.publish_date,
+              r.trend_name, r.trend_desc, r.reels_count, r.publish_date, r.audio_name, r.audio_url,
               COALESCE(n.why,'')   AS why,
               COALESCE(n.hooks,'') AS hooks,
               i.position
@@ -153,12 +153,13 @@ router.post("/reels", async (req, res) => {
   const id = uid("tr");
   const { rows } = await q(
     `INSERT INTO trend_reels (id,url,url_key,shortcode,category,tags,caption,added_by,
-                              trend_name,trend_desc,reels_count,publish_date)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+                              trend_name,trend_desc,reels_count,publish_date,audio_name,audio_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
     [id, url, key, shortcodeOf(url), clean(req.body.category, 60),
      clean(req.body.tags, 200), clean(req.body.caption, 1000), req.user.id,
      clean(req.body.trend_name, 120), clean(req.body.trend_desc, 2000),
-     clean(req.body.reels_count, 40), clean(req.body.publish_date, 20)]
+     clean(req.body.reels_count, 40), clean(req.body.publish_date, 20),
+     clean(req.body.audio_name, 160), clean(req.body.audio_url, 500)]
   );
   res.json({ reel: rows[0] });
 });
@@ -189,7 +190,7 @@ router.post("/reels/bulk", async (req, res) => {
 /* Update category/tags on a directory reel (shared metadata). */
 router.patch("/reels/:id", async (req, res) => {
   const fields = [], params = [];
-  for (const k of ["category", "tags", "caption", "trend_name", "trend_desc", "reels_count", "publish_date"]) {
+  for (const k of ["category", "tags", "caption", "trend_name", "trend_desc", "reels_count", "publish_date", "audio_name", "audio_url"]) {
     if (k in req.body) { params.push(clean(req.body[k], k === "trend_desc" ? 2000 : 200)); fields.push(`${k}=$${params.length}`); }
   }
   if (!fields.length) return res.json({ ok: true });

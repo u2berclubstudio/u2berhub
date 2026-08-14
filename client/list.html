@@ -26,29 +26,21 @@
   .by{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;}
   .count{font-family:var(--mono);font-size:11px;color:var(--muted);margin:24px 0 12px;letter-spacing:.1em;text-transform:uppercase;}
   .grid{display:block;}
-  .entry{border-top:1px solid var(--line);padding:34px 0 8px;}
-  .entry:first-child{border-top:none;padding-top:14px;}
-  .entry h2{font-family:var(--display);font-weight:700;font-size:25px;letter-spacing:-.02em;margin:0 0 8px;line-height:1.15;}
-  .entry .desc{font-size:15.5px;line-height:1.65;color:var(--ink-soft);margin:0 0 16px;max-width:660px;}
-  .entry .stats{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.06em;}
-  .entry .stats b{color:var(--amber);}
-  .split{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;}
-  .split .vid{flex:0 0 300px;max-width:300px;}
-  .split .side{flex:1;min-width:260px;}
-  .why{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
-  .why .lbl{margin-top:0;}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
-  .embed{width:100%;height:500px;background:#F4F1EA;}
-  .embed iframe{width:100%;height:100%;border:0;display:block;}
-  .ph{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;}
-  .meta{padding:13px 14px;border-top:1px solid var(--line);}
-  .pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
-  .catpill{font-family:var(--mono);font-size:10px;background:var(--amber-soft);color:#8A5A1E;border-radius:5px;padding:2px 7px;}
-  .tagpill{font-family:var(--mono);font-size:10px;background:#EAF3F4;color:var(--teal);border-radius:5px;padding:2px 7px;}
-  .lbl{display:block;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:9px 0 3px;}
-  .note{font-size:13px;color:var(--ink-soft);line-height:1.5;}
-  .open{font-family:var(--mono);font-size:11.5px;color:var(--teal);text-decoration:none;font-weight:700;display:inline-block;margin-top:10px;}
-  .open:hover{text-decoration:underline;}
+  .toc{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:26px 0 34px;max-width:420px;}
+  .toc h3{font-family:var(--display);font-weight:700;font-size:17px;margin:0 0 12px;}
+  .toc a{display:block;color:var(--ink-soft);text-decoration:none;font-size:14px;padding:5px 0;}
+  .toc a:hover{color:var(--amber);}
+  .month{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.02em;margin:44px 0 4px;padding-top:22px;border-top:2px solid var(--ink);}
+  .entry{padding:26px 0 6px;}
+  .entry h2{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:-.02em;margin:0 0 14px;line-height:1.2;}
+  .entry p{font-size:16px;line-height:1.7;color:var(--ink-soft);margin:0 0 14px;max-width:660px;}
+  .entry p b{color:var(--ink);font-weight:700;}
+  .entry .aud a{color:var(--teal);}
+  .stats{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:.06em;}
+  .stats b{color:var(--amber);}
+  .vidwrap{max-width:400px;margin:0 0 14px;}
+  .why{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:13px 15px;margin-bottom:10px;max-width:660px;}
+  .why .lbl{margin-top:0;margin-bottom:5px;}
   .foot{text-align:center;margin-top:48px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
   .foot a{color:var(--teal);text-decoration:none;}
   .center{min-height:70vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;}
@@ -92,43 +84,81 @@
     .then(function (d) {
       document.title = d.list.title + " · U2berClub Tools";
       var items = d.items || [];
-      var cards = items.map(function (it) {
+      function monthKey(d) {
+        if (!d) return "Undated";
+        var dt = new Date(d + "T00:00:00");
+        if (isNaN(dt)) return "Undated";
+        return dt.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+      }
+      function longDate(d) {
+        if (!d) return "";
+        var dt = new Date(d + "T00:00:00");
+        if (isNaN(dt)) return d;
+        return dt.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      }
+
+      // newest first, grouped by month
+      var sorted = items.slice().sort(function (a, b) {
+        return String(b.publish_date || "").localeCompare(String(a.publish_date || ""));
+      });
+      var groups = [], seen = {};
+      sorted.forEach(function (it) {
+        var k = monthKey(it.publish_date);
+        if (!seen[k]) { seen[k] = []; groups.push(k); }
+        seen[k].push(it);
+      });
+
+      function entryHtml(it) {
         var code = it.shortcode;
         var tags = (it.tags || "").split(/[\s,]+/).filter(Boolean).slice(0, 5);
         var title = it.trend_name || it.category || "Trend";
+        var head = "Trend: " + title + (it.publish_date ? " \u2014 " + longDate(it.publish_date) : "");
         var stats = "";
         if (it.reels_count) stats += "<span><b>" + esc(it.reels_count) + "</b> reels made with it</span>";
-        if (it.publish_date) stats += "<span>Published " + esc(it.publish_date) + "</span>";
         if (it.category) stats += "<span>" + esc(it.category) + "</span>";
 
         return '<div class="entry">' +
-          "<h2>" + esc(title) + "</h2>" +
-          (it.trend_desc ? '<p class="desc">' + esc(it.trend_desc) + "</p>" : "") +
+          "<h2>" + esc(head) + "</h2>" +
+          (it.trend_desc ? "<p><b>Trend Recap:</b> " + esc(it.trend_desc) + "</p>" : "") +
+          (it.audio_name
+            ? '<p class="aud"><b>Audio:</b> ' +
+              (it.audio_url
+                ? '<a href="' + esc(it.audio_url) + '" target="_blank" rel="noreferrer noopener">' + esc(it.audio_name) + "</a>"
+                : esc(it.audio_name)) + "</p>"
+            : "") +
           (stats ? '<div class="stats">' + stats + "</div>" : "") +
-          '<div class="split">' +
-            '<div class="vid"><div class="card"><div class="embed">' +
-              (code
-                ? '<iframe loading="lazy" src="https://www.instagram.com/reel/' + esc(code) + '/embed/captioned/"></iframe>'
-                : '<div class="ph">link only</div>') +
-            "</div></div>" +
-            '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noreferrer noopener">Watch the reel \u2197</a>' +
-            "</div>" +
-            '<div class="side">' +
-              (it.why ? '<div class="why"><span class="lbl">Why it works</span><div class="note">' + esc(it.why) + "</div></div>" : "") +
-              (it.hooks ? '<div class="why"><span class="lbl">Hook points</span><div class="note">' + esc(it.hooks) + "</div></div>" : "") +
-              (tags.length ? '<div class="pills">' + tags.map(function (t) { return '<span class="tagpill">#' + esc(t.replace(/^#/, "")) + "</span>"; }).join("") + "</div>" : "") +
-            "</div>" +
-          "</div></div>";
+          '<div class="vidwrap"><div class="card"><div class="embed">' +
+            (code
+              ? '<iframe loading="lazy" src="https://www.instagram.com/reel/' + esc(code) + '/embed/captioned/"></iframe>'
+              : '<div class="ph">link only</div>') +
+          "</div></div>" +
+          '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noreferrer noopener">Watch on Instagram \u2197</a></div>' +
+          (it.why ? '<div class="why"><span class="lbl">Why it works</span><div class="note">' + esc(it.why) + "</div></div>" : "") +
+          (it.hooks ? '<div class="why"><span class="lbl">Hook points</span><div class="note">' + esc(it.hooks) + "</div></div>" : "") +
+          (tags.length ? '<div class="pills">' + tags.map(function (t) { return '<span class="tagpill">#' + esc(t.replace(/^#/, "")) + "</span>"; }).join("") + "</div>" : "") +
+          "</div>";
+      }
+
+      var toc = groups.length > 1
+        ? '<div class="toc"><h3>Content</h3>' +
+          groups.map(function (g, i) { return '<a href="#m' + i + '">Reels Trends: ' + esc(g) + "</a>"; }).join("") +
+          "</div>"
+        : "";
+
+      var bodyHtml = groups.map(function (g, i) {
+        return '<h2 class="month" id="m' + i + '">Reels Trends: ' + esc(g) + "</h2>" +
+               seen[g].map(entryHtml).join("");
       }).join("");
 
       root.innerHTML =
         '<div class="eyebrow">A curated list</div>' +
         "<h1>" + esc(d.list.title) + "</h1>" +
         (d.list.blurb ? '<div class="blurb">' + esc(d.list.blurb) + "</div>" : "") +
-        '<div class="by">curated by ' + esc(d.owner.name) + " · @" + esc(d.owner.username) + "</div>" +
-        '<div class="count">' + items.length + " trend" + (items.length === 1 ? "" : "s") + " \u00b7 updated " + new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) + "</div>" +
-        (items.length ? '<div class="grid">' + cards + "</div>"
-                      : '<div class="center"><p>This list is empty.</p></div>');
+        '<div class="by">curated by ' + esc(d.owner.name) + " \u00b7 @" + esc(d.owner.username) + "</div>" +
+        '<div class="count">' + items.length + " trend" + (items.length === 1 ? "" : "s") +
+          " \u00b7 updated " + new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) + "</div>" +
+        toc +
+        (items.length ? bodyHtml : '<div class="center"><p>This list is empty.</p></div>');
     })
     .catch(function () { notFound(); });
 })();
