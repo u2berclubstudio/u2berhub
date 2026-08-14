@@ -25,7 +25,18 @@
   .blurb{color:var(--muted);font-size:15px;max-width:600px;}
   .by{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;}
   .count{font-family:var(--mono);font-size:11px;color:var(--muted);margin:24px 0 12px;letter-spacing:.1em;text-transform:uppercase;}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+  .grid{display:block;}
+  .entry{border-top:1px solid var(--line);padding:34px 0 8px;}
+  .entry:first-child{border-top:none;padding-top:14px;}
+  .entry h2{font-family:var(--display);font-weight:700;font-size:25px;letter-spacing:-.02em;margin:0 0 8px;line-height:1.15;}
+  .entry .desc{font-size:15.5px;line-height:1.65;color:var(--ink-soft);margin:0 0 16px;max-width:660px;}
+  .entry .stats{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.06em;}
+  .entry .stats b{color:var(--amber);}
+  .split{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;}
+  .split .vid{flex:0 0 300px;max-width:300px;}
+  .split .side{flex:1;min-width:260px;}
+  .why{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
+  .why .lbl{margin-top:0;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
   .embed{width:100%;height:500px;background:#F4F1EA;}
   .embed iframe{width:100%;height:100%;border:0;display:block;}
@@ -84,20 +95,29 @@
       var cards = items.map(function (it) {
         var code = it.shortcode;
         var tags = (it.tags || "").split(/[\s,]+/).filter(Boolean).slice(0, 5);
-        return '<div class="card">' +
-          '<div class="embed">' +
-            (code
-              ? '<iframe loading="lazy" src="https://www.instagram.com/reel/' + esc(code) + '/embed/captioned/"></iframe>'
-              : '<div class="ph">link only</div>') +
-          "</div>" +
-          '<div class="meta">' +
-            '<div class="pills">' +
-              (it.category ? '<span class="catpill">' + esc(it.category) + "</span>" : "") +
-              tags.map(function (t) { return '<span class="tagpill">#' + esc(t.replace(/^#/, "")) + "</span>"; }).join("") +
+        var title = it.trend_name || it.category || "Trend";
+        var stats = "";
+        if (it.reels_count) stats += "<span><b>" + esc(it.reels_count) + "</b> reels made with it</span>";
+        if (it.publish_date) stats += "<span>Published " + esc(it.publish_date) + "</span>";
+        if (it.category) stats += "<span>" + esc(it.category) + "</span>";
+
+        return '<div class="entry">' +
+          "<h2>" + esc(title) + "</h2>" +
+          (it.trend_desc ? '<p class="desc">' + esc(it.trend_desc) + "</p>" : "") +
+          (stats ? '<div class="stats">' + stats + "</div>" : "") +
+          '<div class="split">' +
+            '<div class="vid"><div class="card"><div class="embed">' +
+              (code
+                ? '<iframe loading="lazy" src="https://www.instagram.com/reel/' + esc(code) + '/embed/captioned/"></iframe>'
+                : '<div class="ph">link only</div>') +
+            "</div></div>" +
+            '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noreferrer noopener">Watch the reel \u2197</a>' +
             "</div>" +
-            (it.why ? '<span class="lbl">Why it works</span><div class="note">' + esc(it.why) + "</div>" : "") +
-            (it.hooks ? '<span class="lbl">Hook points</span><div class="note">' + esc(it.hooks) + "</div>" : "") +
-            '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noreferrer noopener">Open on Instagram ↗</a>' +
+            '<div class="side">' +
+              (it.why ? '<div class="why"><span class="lbl">Why it works</span><div class="note">' + esc(it.why) + "</div></div>" : "") +
+              (it.hooks ? '<div class="why"><span class="lbl">Hook points</span><div class="note">' + esc(it.hooks) + "</div></div>" : "") +
+              (tags.length ? '<div class="pills">' + tags.map(function (t) { return '<span class="tagpill">#' + esc(t.replace(/^#/, "")) + "</span>"; }).join("") + "</div>" : "") +
+            "</div>" +
           "</div></div>";
       }).join("");
 
@@ -106,7 +126,7 @@
         "<h1>" + esc(d.list.title) + "</h1>" +
         (d.list.blurb ? '<div class="blurb">' + esc(d.list.blurb) + "</div>" : "") +
         '<div class="by">curated by ' + esc(d.owner.name) + " · @" + esc(d.owner.username) + "</div>" +
-        '<div class="count">' + items.length + " reel" + (items.length === 1 ? "" : "s") + "</div>" +
+        '<div class="count">' + items.length + " trend" + (items.length === 1 ? "" : "s") + " \u00b7 updated " + new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) + "</div>" +
         (items.length ? '<div class="grid">' + cards + "</div>"
                       : '<div class="center"><p>This list is empty.</p></div>');
     })

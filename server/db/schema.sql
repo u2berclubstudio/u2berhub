@@ -102,3 +102,9 @@ CREATE TABLE IF NOT EXISTS trend_list_items (
   position    INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (list_id, reel_id)
 );
+
+-- TRENDS: article-style fields per trend entry
+ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS trend_name  TEXT NOT NULL DEFAULT '';
+ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS trend_desc  TEXT NOT NULL DEFAULT '';
+ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS reels_count TEXT NOT NULL DEFAULT '';
+ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS publish_date TEXT NOT NULL DEFAULT '';

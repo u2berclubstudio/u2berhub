@@ -205,8 +205,14 @@ function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo }) {
             <span className="tagpill" key={i}>#{t.replace(/^#/, "")}</span>
           ))}
         </div>
-        {reel.caption && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 7, lineHeight: 1.45 }}>{reel.caption.slice(0, 140)}</div>}
-        <div className="by">added by {reel.added_by_name || "—"}</div>
+        {reel.trend_name && <div style={{ fontFamily: "var(--display)", fontWeight: 600, fontSize: 15, marginTop: 8 }}>{reel.trend_name}</div>}
+        {reel.trend_desc && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 4, lineHeight: 1.45 }}>{reel.trend_desc.slice(0, 180)}{reel.trend_desc.length > 180 ? "…" : ""}</div>}
+        {!reel.trend_desc && reel.caption && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 7, lineHeight: 1.45 }}>{reel.caption.slice(0, 140)}</div>}
+        <div className="by">
+          {reel.reels_count ? <>{reel.reels_count} reels made · </> : null}
+          {reel.publish_date ? <>{reel.publish_date} · </> : null}
+          added by {reel.added_by_name || "—"}
+        </div>
 
         {!open ? (
           <div className={"note-box " + (hasNote ? "filled" : "")} onClick={onToggle} style={{ cursor: "pointer" }}>
@@ -323,7 +329,7 @@ function Modal({ children, onClose }) {
 }
 
 function AddReelModal({ onClose, onDone }) {
-  const [f, setF] = useState({ url: "", category: "", tags: "", caption: "" });
+  const [f, setF] = useState({ url: "", trend_name: "", trend_desc: "", reels_count: "", publish_date: "", category: "", tags: "", caption: "" });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
@@ -338,6 +344,14 @@ function AddReelModal({ onClose, onDone }) {
       <h3>Add a reel</h3>
       <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 0 }}>It goes into the shared directory — every creator here will see it.</p>
       <div className="field"><label className="lbl">Instagram link</label><input className="inp" value={f.url} onChange={set("url")} placeholder="https://www.instagram.com/reel/..." /></div>
+      <div className="field"><label className="lbl">Trend name</label><input className="inp" value={f.trend_name} onChange={set("trend_name")} placeholder="e.g. Tap to reveal" /></div>
+      <div className="field"><label className="lbl">What is this trend?</label>
+        <textarea className="inp" style={{ minHeight: 78, resize: "vertical" }} value={f.trend_desc} onChange={set("trend_desc")}
+          placeholder="Describe how it works — the format, the sound, what makes people stop. This becomes the article text on a published list." /></div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div className="field" style={{ flex: 1 }}><label className="lbl">Reels made with it</label><input className="inp" value={f.reels_count} onChange={set("reels_count")} placeholder="12K" /></div>
+        <div className="field" style={{ flex: 1 }}><label className="lbl">Date of publish</label><input className="inp" type="date" value={f.publish_date} onChange={set("publish_date")} /></div>
+      </div>
       <div className="field"><label className="lbl">Category</label><input className="inp" value={f.category} onChange={set("category")} placeholder="Restaurant, Fitness, Fashion…" /></div>
       <div className="field"><label className="lbl">Tags</label><input className="inp" value={f.tags} onChange={set("tags")} placeholder="hook transition food" /></div>
       <div className="field"><label className="lbl">What is it? (optional)</label><input className="inp" value={f.caption} onChange={set("caption")} placeholder="short description" /></div>

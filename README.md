@@ -120,3 +120,10 @@ The first tool with **deliberately shared** data.
 - **Import from SAVEDREELS** — bulk-add reels from your own vault to seed the directory.
 - Public pages are served from a standalone `list.html` (separate Vite entry), marked
   `noindex` since lists are unlisted rather than fully public.
+
+
+### Trend entries publish as an article
+Each reel in the directory carries **trend name**, **description of the trend**, **how many
+reels were made with it**, and a **publish date**. A published list renders as an article —
+each trend is a section: heading, description paragraph, stats line, the reel embed beside
+the curator's "why it works" and "hook points", tags, and a Watch-the-reel link.
