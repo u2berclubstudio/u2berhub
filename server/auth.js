@@ -48,3 +48,25 @@ export function adminOnly(req, res, next) {
   next();
 }
 export const publicUser = (u) => u && ({ id: u.id, email: u.email, name: u.name, role: u.role, status: u.status });
+
+/* ---- per-user tool access ----
+   tool_access NULL or "" means every live tool (the default).
+   Otherwise it's a comma-separated allow-list of tool ids. */
+export function allowedTools(user) {
+  const raw = (user && user.tool_access) || "";
+  const list = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : null; // null = all
+}
+export function canUseTool(user, toolId) {
+  const list = allowedTools(user);
+  return !list || list.includes(toolId);
+}
+/* Middleware: block a tool's API if this user isn't allowed it. */
+export function requireTool(toolId) {
+  return (req, res, next) => {
+    if (!canUseTool(req.user, toolId)) {
+      return res.status(403).json({ error: "You don't have access to this tool." });
+    }
+    next();
+  };
+}

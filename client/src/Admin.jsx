@@ -3,16 +3,26 @@ import { api } from "./theme.js";
 
 export default function Admin() {
   const [tab, setTab] = useState("users");
-  const [users, setUsers] = useState([]); const [invites, setInvites] = useState([]);
+  const [users, setUsers] = useState([]); const [invites, setInvites] = useState([]); const [tools, setTools] = useState([]);
   const [note, setNote] = useState(""); const [maxUses, setMaxUses] = useState(1); const [fresh, setFresh] = useState("");
 
   const load = useCallback(async () => {
     setUsers((await api.get("/api/admin/users")).users || []);
     setInvites((await api.get("/api/admin/invites")).invites || []);
+    setTools((await api.get("/api/tools")).tools || []);
   }, []);
   useEffect(() => { load(); }, [load]);
 
   const act = async (id, action) => { await api.post(`/api/admin/users/${id}/${action}`); load(); };
+  const toggleTool = async (u, toolId) => {
+    const all = tools.map((t) => t.id);
+    const current = (u.tool_access == null || u.tool_access === "") ? all : u.tool_access.split(",").filter(Boolean);
+    const next = current.includes(toolId) ? current.filter((t) => t !== toolId) : [...current, toolId];
+    // if they end up with everything, clear the restriction (null = all, future-proof)
+    const payload = next.length === all.length ? null : next;
+    await api.post(`/api/admin/users/${u.id}/tools`, { tools: payload });
+    load();
+  };
   const mint = async () => {
     const r = await api.post("/api/admin/invites", { note, maxUses: Number(maxUses) });
     if (r.code) { setFresh(r.code); setNote(""); load(); }
@@ -31,13 +41,37 @@ export default function Admin() {
       {tab === "users" && (
         <div className="card">
           <table className="admin">
-            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Role</th><th>Tools</th><th>Joined</th><th></th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
                   <td>{u.name}</td><td>{u.email}</td>
                   <td><span className={"pill " + u.status}>{u.status}</span></td>
                   <td>{u.role}</td>
+                  <td>
+                    {u.role === "admin" ? (
+                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>all</span>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {tools.map((t) => {
+                          const on = (u.tool_access == null || u.tool_access === "") || u.tool_access.split(",").includes(t.id);
+                          return (
+                            <button key={t.id} onClick={() => toggleTool(u, t.id)} title={t.name}
+                              style={{
+                                fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".04em",
+                                padding: "3px 7px", borderRadius: 5, cursor: "pointer",
+                                border: "1px solid " + (on ? "var(--good)" : "var(--line)"),
+                                background: on ? "#E8F3EB" : "#fff",
+                                color: on ? "var(--good)" : "var(--muted)",
+                                textDecoration: on ? "none" : "line-through",
+                              }}>
+                              {t.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
                   <td style={{ color: "var(--muted)" }}>{new Date(u.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
                   <td>
                     {u.role !== "admin" && <>

@@ -112,3 +112,7 @@ ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS publish_date TEXT NOT NULL DEFA
 -- TRENDS: audio/sound behind the trend
 ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS audio_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS audio_url  TEXT NOT NULL DEFAULT '';
+
+-- Per-user tool access. NULL/empty = all live tools (default, backwards compatible).
+-- Otherwise a comma-separated list of tool ids the user may open.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tool_access TEXT;

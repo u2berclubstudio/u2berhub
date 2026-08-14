@@ -6,7 +6,7 @@
 import express from "express";
 import crypto from "crypto";
 import { q } from "./db/index.js";
-import { auth, adminOnly } from "./auth.js";
+import { auth, adminOnly, requireTool } from "./auth.js";
 
 const uid = (p) => p + "_" + crypto.randomBytes(5).toString("hex");
 const clean = (s, max = 400) => String(s || "").trim().slice(0, max);
@@ -90,8 +90,9 @@ router.get("/public/:username/:slug", async (req, res) => {
   }
 });
 
-/* Everything below requires an active signed-in creator. */
-router.use(auth(true));
+/* Everything below requires an active signed-in creator WITH access to TRENDS.
+   The public list route above stays open to everyone. */
+router.use(auth(true), requireTool("trends"));
 
 /* ---------------- username ---------------- */
 router.get("/me", async (req, res) => {

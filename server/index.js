@@ -4,7 +4,7 @@ import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { q, initDb } from "./db/index.js";
-import { hashPassword, verifyPassword, createSession, destroySession, auth, adminOnly, publicUser } from "./auth.js";
+import { hashPassword, verifyPassword, createSession, destroySession, auth, adminOnly, publicUser, canUseTool, requireTool } from "./auth.js";
 import { TOOLS } from "./tools.js";
 import contentflow from "./contentflow.js";
 import trends from "./trends.js";
@@ -72,18 +72,24 @@ app.get("/api/auth/me", auth(false), (req, res) => {
 
 /* ---------------- TOOLS (catalog) ---------------- */
 app.get("/api/tools", auth(true), (req, res) => {
-  res.json({ tools: TOOLS.map((t) => ({ id: t.id, name: t.name, tagline: t.tagline, status: t.status })) });
+  const visible = TOOLS.filter((t) => canUseTool(req.user, t.id));
+  res.json({ tools: visible.map((t) => ({ id: t.id, name: t.name, tagline: t.tagline, status: t.status })) });
 });
 
 /* ---------------- PER-USER TOOL DATA ---------------- */
 // generic key-value store, always scoped to the signed-in user + a tool namespace
-app.get("/api/data/:tool", auth(true), async (req, res) => {
+const toolGate = (req, res, next) => {
+  const base = String(req.params.tool || "").replace(/_vault$/, "");
+  if (!canUseTool(req.user, base)) return res.status(403).json({ error: "You don't have access to this tool." });
+  next();
+};
+app.get("/api/data/:tool", auth(true), toolGate, async (req, res) => {
   const { rows } = await q("SELECT key, value FROM tool_data WHERE user_id=$1 AND tool=$2", [req.user.id, req.params.tool]);
   const out = {};
   rows.forEach((r) => { out[r.key] = r.value; });
   res.json(out);
 });
-app.put("/api/data/:tool", auth(true), async (req, res) => {
+app.put("/api/data/:tool", auth(true), toolGate, async (req, res) => {
   const incoming = req.body && typeof req.body === "object" ? req.body : {};
   const entries = Object.entries(incoming);
   if (entries.length > 5000) return res.status(413).json({ error: "Too many items in one write." });
@@ -95,16 +101,25 @@ app.put("/api/data/:tool", auth(true), async (req, res) => {
   }
   res.json({ ok: true, count: entries.length });
 });
-app.delete("/api/data/:tool/:key", auth(true), async (req, res) => {
+app.delete("/api/data/:tool/:key", auth(true), toolGate, async (req, res) => {
   await q("DELETE FROM tool_data WHERE user_id=$1 AND tool=$2 AND key=$3", [req.user.id, req.params.tool, req.params.key]);
   res.json({ ok: true });
 });
 
 /* ---------------- ADMIN ---------------- */
 app.get("/api/admin/users", auth(true), adminOnly, async (req, res) => {
-  const { rows } = await q("SELECT id,email,name,role,status,invite_code,created_at,approved_at FROM users ORDER BY created_at DESC");
+  const { rows } = await q("SELECT id,email,name,role,status,invite_code,created_at,approved_at,tool_access FROM users ORDER BY created_at DESC");
   res.json({ users: rows });
 });
+app.post("/api/admin/users/:id/tools", auth(true), adminOnly, async (req, res) => {
+  const tools = Array.isArray(req.body.tools) ? req.body.tools : null;
+  const valid = new Set(TOOLS.map((t) => t.id));
+  // empty array = no tools; null = all tools (clears the restriction)
+  const value = tools === null ? null : tools.filter((t) => valid.has(t)).join(",");
+  await q("UPDATE users SET tool_access=$1 WHERE id=$2", [value, req.params.id]);
+  res.json({ ok: true, tool_access: value });
+});
+
 app.post("/api/admin/users/:id/:action", auth(true), adminOnly, async (req, res) => {
   const map = { approve: "active", block: "blocked", pending: "pending" };
   const status = map[req.params.action];
@@ -125,7 +140,7 @@ app.post("/api/admin/invites", auth(true), adminOnly, async (req, res) => {
   res.json({ ok: true, code });
 });
 
-app.use("/api/contentflow", contentflow);
+app.use("/api/contentflow", auth(true), requireTool("contentflow"), contentflow);
 app.use("/api/trends", trends);
 
 /* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */

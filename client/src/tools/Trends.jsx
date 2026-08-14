@@ -24,7 +24,7 @@ const CSS = `
 .cat-chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
 .reel-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
 .reel-card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
-.reel-embed { width:100%; height:480px; background:#F4F1EA; position:relative; }
+.reel-embed { width:100%; height:660px; background:#F4F1EA; position:relative; }
 .reel-embed iframe { width:100%; height:100%; border:0; display:block; }
 .reel-ph { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:8px; color:var(--muted); font-family:var(--mono); font-size:12px; text-align:center; padding:16px; }

@@ -133,3 +133,12 @@ under **month headings** (newest first), and each trend as *Trend: Name — 7 Au
 with a bold **Trend Recap:** paragraph, an **Audio:** line linking the sound, a stats line,
 the reel embed, a Watch-on-Instagram link, then the curator's Why-it-works / Hook-points notes.
 Fields per trend: trend name, description, reels made with it, publish date, audio name + link.
+
+
+## Per-user tool access
+In **Admin → Users**, each creator has a **Tools** column with one pill per tool. Click to
+grant/revoke. Green = allowed, struck-through = revoked. Admins always have everything.
+Enforcement is server-side, not just UI: revoked tools disappear from the hub AND their APIs
+return 403 (`/api/contentflow/*`, `/api/trends/*`, `/api/data/<tool>`). Published TRENDS list
+pages stay public regardless — permissions never break sharing.
+Stored as `users.tool_access` (NULL = all tools, so existing users are unaffected).
