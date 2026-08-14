@@ -56,6 +56,7 @@ table.admin td { padding:9px 10px; border-bottom:1px solid var(--line); }
 export const api = {
   async get(u){ const r=await fetch(u,{credentials:"include"}); return r.json(); },
   async post(u,b){ const r=await fetch(u,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); return r.json(); },
+  async patch(u,b){ const r=await fetch(u,{method:"PATCH",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); return r.json(); },
   async put(u,b){ const r=await fetch(u,{method:"PUT",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})}); return r.json(); },
   async del(u){ const r=await fetch(u,{method:"DELETE",credentials:"include"}); return r.json(); },
 };

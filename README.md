@@ -103,3 +103,20 @@ The Inspiration stage has a free-drag **mood canvas** (Milanote/Figma-style):
   and notes, plus upload the **retention screenshot** from Instagram Insights.
 - **Delete project** button (with confirm) removes the project and all its data.
 - Old projects auto-backfill the new fields on load, so nothing breaks on deploy.
+
+
+## TRENDS — community reel directory + publishable lists
+The first tool with **deliberately shared** data.
+- **Directory** (`trend_reels`) — shared across all approved creators. Anyone adds a reel
+  (link + category + tags); deduped by normalised URL so the same reel is one entry.
+  Admin can remove anything.
+- **Notes** (`trend_notes`) — private per user, per reel: why it works + hook points.
+  Two creators see the same reel but only their own notes.
+- **Lists** (`trend_lists`) — named collections; **publish** to get a public URL at
+  `/list/<username>/<slug>`, readable with no login. Published lists include the
+  creator's notes — the UI warns about this before they write and again at publish time.
+- **Usernames** — creator-chosen, uniqueness-checked, reserved words blocked so a username
+  can never shadow a real route (`api`, `admin`, `contentflow`, ...).
+- **Import from SAVEDREELS** — bulk-add reels from your own vault to seed the directory.
+- Public pages are served from a standalone `list.html` (separate Vite entry), marked
+  `noindex` since lists are unlisted rather than fully public.

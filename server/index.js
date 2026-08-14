@@ -7,6 +7,7 @@ import { q, initDb } from "./db/index.js";
 import { hashPassword, verifyPassword, createSession, destroySession, auth, adminOnly, publicUser } from "./auth.js";
 import { TOOLS } from "./tools.js";
 import contentflow from "./contentflow.js";
+import trends from "./trends.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -125,6 +126,11 @@ app.post("/api/admin/invites", auth(true), adminOnly, async (req, res) => {
 });
 
 app.use("/api/contentflow", contentflow);
+app.use("/api/trends", trends);
+
+/* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */
+app.get("/list/:username/:slug", (_q, res) =>
+  res.sendFile(path.join(__dirname, "..", "client", "dist", "list.html")));
 
 /* ---------------- STATIC (built client) ---------------- */
 app.use(express.static(path.join(__dirname, "..", "client", "dist")));

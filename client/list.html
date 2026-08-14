@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/png" href="/logo.png" />
+<title>A reel list · U2berClub Tools</title>
+<meta name="robots" content="noindex" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
+  :root{
+    --ink:#15171E; --ink-soft:#2A2E3A; --paper:#FBF8F2; --card:#FFFFFF;
+    --amber:#E8852B; --amber-soft:#FBE9D2; --teal:#2D7384; --muted:#71757E; --line:#EBE5D8;
+    --display:'Space Grotesk',sans-serif; --body:'Inter',sans-serif; --mono:'Space Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 22px 80px;}
+  .top{display:flex;align-items:center;gap:11px;border-bottom:2px solid var(--ink);padding-bottom:13px;}
+  .top img{width:38px;height:38px;border-radius:50%;}
+  .top .b{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.02em;}
+  .top .b span{color:var(--amber);}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-top:26px;}
+  h1{font-family:var(--display);font-weight:700;font-size:33px;letter-spacing:-.03em;margin:7px 0 6px;line-height:1.05;}
+  .blurb{color:var(--muted);font-size:15px;max-width:600px;}
+  .by{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;}
+  .count{font-family:var(--mono);font-size:11px;color:var(--muted);margin:24px 0 12px;letter-spacing:.1em;text-transform:uppercase;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+  .embed{width:100%;height:500px;background:#F4F1EA;}
+  .embed iframe{width:100%;height:100%;border:0;display:block;}
+  .ph{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:12px;}
+  .meta{padding:13px 14px;border-top:1px solid var(--line);}
+  .pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;}
+  .catpill{font-family:var(--mono);font-size:10px;background:var(--amber-soft);color:#8A5A1E;border-radius:5px;padding:2px 7px;}
+  .tagpill{font-family:var(--mono);font-size:10px;background:#EAF3F4;color:var(--teal);border-radius:5px;padding:2px 7px;}
+  .lbl{display:block;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:9px 0 3px;}
+  .note{font-size:13px;color:var(--ink-soft);line-height:1.5;}
+  .open{font-family:var(--mono);font-size:11.5px;color:var(--teal);text-decoration:none;font-weight:700;display:inline-block;margin-top:10px;}
+  .open:hover{text-decoration:underline;}
+  .foot{text-align:center;margin-top:48px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .foot a{color:var(--teal);text-decoration:none;}
+  .center{min-height:70vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;}
+  .center h2{font-family:var(--display);font-size:22px;margin:0 0 6px;}
+  .center p{color:var(--muted);font-size:14px;}
+  @media(max-width:640px){h1{font-size:26px}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <img src="/logo.png" alt="" onerror="this.style.display='none'">
+    <div class="b">U2BER<span>CLUB</span> TOOLS</div>
+  </div>
+  <div id="root"><div class="center"><p>Loading…</p></div></div>
+  <div class="foot">
+    Curated with <a href="/">U2berClub Tools</a> · Naukri Nahi, Naam Banao
+  </div>
+</div>
+
+<script>
+(function () {
+  var parts = location.pathname.split("/").filter(Boolean); // ["list", username, slug]
+  var username = parts[1], slug = parts[2];
+  var root = document.getElementById("root");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function notFound(msg) {
+    root.innerHTML = '<div class="center"><div><h2>List not found</h2><p>' +
+      esc(msg || "This list may have been unpublished, or the link is wrong.") + "</p></div></div>";
+  }
+
+  if (!username || !slug) { notFound(); return; }
+
+  fetch("/api/trends/public/" + encodeURIComponent(username) + "/" + encodeURIComponent(slug))
+    .then(function (r) { if (!r.ok) throw new Error("nf"); return r.json(); })
+    .then(function (d) {
+      document.title = d.list.title + " · U2berClub Tools";
+      var items = d.items || [];
+      var cards = items.map(function (it) {
+        var code = it.shortcode;
+        var tags = (it.tags || "").split(/[\s,]+/).filter(Boolean).slice(0, 5);
+        return '<div class="card">' +
+          '<div class="embed">' +
+            (code
+              ? '<iframe loading="lazy" src="https://www.instagram.com/reel/' + esc(code) + '/embed/captioned/"></iframe>'
+              : '<div class="ph">link only</div>') +
+          "</div>" +
+          '<div class="meta">' +
+            '<div class="pills">' +
+              (it.category ? '<span class="catpill">' + esc(it.category) + "</span>" : "") +
+              tags.map(function (t) { return '<span class="tagpill">#' + esc(t.replace(/^#/, "")) + "</span>"; }).join("") +
+            "</div>" +
+            (it.why ? '<span class="lbl">Why it works</span><div class="note">' + esc(it.why) + "</div>" : "") +
+            (it.hooks ? '<span class="lbl">Hook points</span><div class="note">' + esc(it.hooks) + "</div>" : "") +
+            '<a class="open" href="' + esc(it.url) + '" target="_blank" rel="noreferrer noopener">Open on Instagram ↗</a>' +
+          "</div></div>";
+      }).join("");
+
+      root.innerHTML =
+        '<div class="eyebrow">A curated list</div>' +
+        "<h1>" + esc(d.list.title) + "</h1>" +
+        (d.list.blurb ? '<div class="blurb">' + esc(d.list.blurb) + "</div>" : "") +
+        '<div class="by">curated by ' + esc(d.owner.name) + " · @" + esc(d.owner.username) + "</div>" +
+        '<div class="count">' + items.length + " reel" + (items.length === 1 ? "" : "s") + "</div>" +
+        (items.length ? '<div class="grid">' + cards + "</div>"
+                      : '<div class="center"><p>This list is empty.</p></div>');
+    })
+    .catch(function () { notFound(); });
+})();
+</script>
+</body>
+</html>
