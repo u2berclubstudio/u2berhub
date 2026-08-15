@@ -64,6 +64,8 @@ const shortcodeOf = (u = "") =>
 
 export default function Trends({ me }) {
   const [tab, setTab] = useState("browse");
+  const [scope, setScope] = useState("official");
+  const [counts, setCounts] = useState({ official: 0, mine: 0 });
   const [reels, setReels] = useState([]);
   const [cats, setCats] = useState([]);
   const [lists, setLists] = useState([]);
@@ -77,19 +79,22 @@ export default function Trends({ me }) {
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
+    params.set("scope", scope);
     if (cat) params.set("category", cat);
     if (search.trim()) params.set("q", search.trim());
-    const [r, c, l, m] = await Promise.all([
+    const [r, c, l, m, n] = await Promise.all([
       api.get("/api/trends/reels?" + params.toString()),
-      api.get("/api/trends/categories"),
+      api.get("/api/trends/categories?scope=" + scope),
       api.get("/api/trends/lists"),
       api.get("/api/trends/me"),
+      api.get("/api/trends/counts"),
     ]);
     setReels(r.reels || []);
     setCats(c.categories || []);
     setLists(l.lists || []);
     setUsername(m.username || null);
-  }, [cat, search]);
+    setCounts(n || { official: 0, mine: 0 });
+  }, [cat, search, scope]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -103,12 +108,15 @@ export default function Trends({ me }) {
         <div>
           <div className="eyebrow">U2berClub Tools</div>
           <div className="h1" style={{ fontSize: 30 }}>TRENDS</div>
-          <div className="sub">A shared directory of reels worth stealing from. Add what you find, note why it works, and publish a list anyone can open.</div>
+          <div className="sub">Curated trends from U2berClub, plus your own private collection. Note why they work, and publish a list anyone can open.</div>
         </div>
       </div>
 
       <div className="tr-tabs">
-        <button className={"tr-tab " + (tab === "browse" ? "on" : "")} onClick={() => setTab("browse")}>Browse ({reels.length})</button>
+        <button className={"tr-tab " + (tab === "browse" && scope === "official" ? "on" : "")}
+          onClick={() => { setTab("browse"); setScope("official"); setCat(""); }}>U2berClub Trends ({counts.official})</button>
+        <button className={"tr-tab " + (tab === "browse" && scope === "mine" ? "on" : "")}
+          onClick={() => { setTab("browse"); setScope("mine"); setCat(""); }}>My reels ({counts.mine})</button>
         <button className={"tr-tab " + (tab === "lists" ? "on" : "")} onClick={() => setTab("lists")}>My lists ({lists.length})</button>
         <span style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="btn btn-amber" onClick={() => setModal("add")}>+ Add a reel</button>
@@ -120,6 +128,11 @@ export default function Trends({ me }) {
 
       {tab === "browse" && (
         <>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>
+            {scope === "official"
+              ? "Curated by U2berClub — everyone sees these. Your notes on them stay private."
+              : "Only you can see these. Other creators never see reels you add here."}
+          </div>
           <div className="tr-bar">
             <input className="tr-search" placeholder="Search captions, tags, categories…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <button className={"cat-chip " + (cat === "" ? "on" : "")} onClick={() => setCat("")}>All</button>
@@ -132,14 +145,19 @@ export default function Trends({ me }) {
 
           {!reels.length ? (
             <div className="empty">
-              Nothing here yet.<br />
-              <span style={{ fontSize: 13 }}>Add a reel, or import a batch from your SAVEDREELS vault to get the directory started.</span>
+              {scope === "official" ? (
+                <>The U2berClub directory is still being built.<br />
+                  <span style={{ fontSize: 13 }}>Curated trends will show up here. In the meantime, add your own under “My reels”.</span></>
+              ) : (
+                <>You haven't added any reels yet.<br />
+                  <span style={{ fontSize: 13 }}>Add a reel, or import a batch from your SAVEDREELS vault. Only you can see these.</span></>
+              )}
             </div>
           ) : (
             <div className="reel-grid">
               {reels.map((r) => (
                 <ReelCard
-                  key={r.id} reel={r} me={me} lists={lists}
+                  key={r.id} reel={r} me={me} lists={lists} scope={scope}
                   open={openNote === r.id}
                   onToggle={() => setOpenNote(openNote === r.id ? null : r.id)}
                   onSaved={load} onFlash={flash}
@@ -158,17 +176,17 @@ export default function Trends({ me }) {
         />
       )}
 
-      {modal === "add" && <AddReelModal onClose={() => setModal(null)} onDone={(m) => { setModal(null); load(); flash(m); }} />}
+      {modal === "add" && <AddReelModal isAdmin={me?.role === "admin"} onClose={() => setModal(null)} onDone={(m) => { setModal(null); setScope(me?.role === "admin" ? "official" : "mine"); flash(m); }} />}
       {modal === "newlist" && <NewListModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); flash("List created."); }} />}
       {modal === "username" && <UsernameModal current={username} onClose={() => setModal(null)} onDone={(u) => { setModal(null); setUsername(u); load(); flash("Username set: " + u); }} />}
-      {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={(m) => { setModal(null); load(); flash(m); }} />}
+      {modal === "import" && <ImportModal isAdmin={me?.role === "admin"} onClose={() => setModal(null)} onDone={(m) => { setModal(null); setScope(me?.role === "admin" ? "official" : "mine"); flash(m); }} />}
       {modal && modal.addTo && <AddToListModal reelId={modal.addTo} lists={lists} onClose={() => setModal(null)} onDone={(m) => { setModal(null); load(); flash(m); }} />}
     </div>
   );
 }
 
 /* ---------------- one reel in the directory ---------------- */
-function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo }) {
+function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo, scope }) {
   const [why, setWhy] = useState(reel.my_why || "");
   const [hooks, setHooks] = useState(reel.my_hooks || "");
   const [saving, setSaving] = useState(false);
@@ -180,8 +198,12 @@ function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo }) {
     await api.put(`/api/trends/notes/${reel.id}`, { why, hooks });
     setSaving(false); onToggle(); onSaved(); onFlash("Note saved.");
   };
+  const canRemove = me?.role === "admin" || (scope === "mine");
   const remove = async () => {
-    if (!confirm("Remove this reel from the shared directory for everyone?")) return;
+    const q2 = scope === "mine"
+      ? "Remove this reel from your collection?"
+      : "Remove this reel from the U2berClub directory for everyone?";
+    if (!confirm(q2)) return;
     await api.del(`/api/trends/reels/${reel.id}`);
     onSaved(); onFlash("Removed from directory.");
   };
@@ -209,6 +231,7 @@ function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo }) {
         {reel.trend_desc && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 4, lineHeight: 1.45 }}>{reel.trend_desc.slice(0, 180)}{reel.trend_desc.length > 180 ? "…" : ""}</div>}
         {!reel.trend_desc && reel.caption && <div style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 7, lineHeight: 1.45 }}>{reel.caption.slice(0, 140)}</div>}
         <div className="by">
+          {reel.official ? <span style={{ color: "var(--amber)", fontWeight: 700 }}>U2BERCLUB · </span> : null}
           {reel.reels_count ? <>{reel.reels_count} reels made · </> : null}
           {reel.publish_date ? <>{reel.publish_date} · </> : null}
           added by {reel.added_by_name || "—"}
@@ -244,7 +267,7 @@ function ReelCard({ reel, me, open, onToggle, onSaved, onFlash, onAddTo }) {
 
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           {!open && <button className="mini" onClick={onAddTo}>+ Add to list</button>}
-          {me?.role === "admin" && <button className="mini" style={{ marginLeft: "auto", color: "var(--warn)" }} onClick={remove}>Remove</button>}
+          {canRemove && <button className="mini" style={{ marginLeft: "auto", color: "var(--warn)" }} onClick={remove}>Remove</button>}
         </div>
       </div>
     </div>
@@ -328,7 +351,7 @@ function Modal({ children, onClose }) {
   );
 }
 
-function AddReelModal({ onClose, onDone }) {
+function AddReelModal({ onClose, onDone, isAdmin }) {
   const [f, setF] = useState({ url: "", trend_name: "", trend_desc: "", reels_count: "", publish_date: "", audio_name: "", audio_url: "", category: "", tags: "", caption: "" });
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -342,7 +365,11 @@ function AddReelModal({ onClose, onDone }) {
   return (
     <Modal onClose={onClose}>
       <h3>Add a reel</h3>
-      <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 0 }}>It goes into the shared directory — every creator here will see it.</p>
+      <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 0 }}>
+        {isAdmin
+          ? "You're an admin — this goes into the official U2berClub directory that every creator sees."
+          : "This is added to your own collection. Only you can see it."}
+      </p>
       <div className="field"><label className="lbl">Instagram link</label><input className="inp" value={f.url} onChange={set("url")} placeholder="https://www.instagram.com/reel/..." /></div>
       <div className="field"><label className="lbl">Trend name</label><input className="inp" value={f.trend_name} onChange={set("trend_name")} placeholder="e.g. Tap to reveal" /></div>
       <div className="field"><label className="lbl">What is this trend?</label>
@@ -458,7 +485,7 @@ function AddToListModal({ reelId, lists, onClose, onDone }) {
 }
 
 /* Import from the user's own SAVEDREELS vault */
-function ImportModal({ onClose, onDone }) {
+function ImportModal({ onClose, onDone, isAdmin }) {
   const [rows, setRows] = useState(null);
   const [sel, setSel] = useState(new Set());
   const [cat, setCat] = useState("");
@@ -505,7 +532,7 @@ function ImportModal({ onClose, onDone }) {
     <Modal onClose={onClose}>
       <h3>Import from SAVEDREELS</h3>
       <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 0 }}>
-        These go into the <b>shared</b> directory — other creators will see them. Your private notes don't come along.
+        These go into your own collection — only you see them. Your private notes don't come along.
       </p>
       {rows === null ? <div style={{ padding: 20, textAlign: "center", color: "var(--muted)" }}>Loading your vault…</div> : (
         <>

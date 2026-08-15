@@ -112,14 +112,17 @@ router.post("/username", async (req, res) => {
 
 /* ---------------- shared directory ---------------- */
 router.get("/reels", async (req, res) => {
+  const scope = req.query.scope === "mine" ? "mine" : "official";
   const cat = clean(req.query.category, 60);
   const search = clean(req.query.q, 80);
   const params = [req.user.id];
-  let where = "1=1";
+  // Official = the U2berClub curated directory, visible to everyone.
+  // Mine = reels this creator added, visible only to them.
+  let where = scope === "mine" ? "r.official = false AND r.added_by = $1" : "r.official = true";
   if (cat) { params.push(cat); where += ` AND r.category = $${params.length}`; }
   if (search) {
     params.push("%" + search.toLowerCase() + "%");
-    where += ` AND (lower(r.caption) LIKE $${params.length} OR lower(r.tags) LIKE $${params.length} OR lower(r.category) LIKE $${params.length})`;
+    where += ` AND (lower(r.caption) LIKE $${params.length} OR lower(r.tags) LIKE $${params.length} OR lower(r.category) LIKE $${params.length} OR lower(r.trend_name) LIKE $${params.length})`;
   }
   const { rows } = await q(
     `SELECT r.*, u.name AS added_by_name,
@@ -133,12 +136,27 @@ router.get("/reels", async (req, res) => {
       LIMIT 500`,
     params
   );
-  res.json({ reels: rows });
+  res.json({ reels: rows, scope });
+});
+
+/* counts for the two tabs */
+router.get("/counts", async (req, res) => {
+  const { rows } = await q(
+    `SELECT
+       (SELECT count(*)::int FROM trend_reels WHERE official = true) AS official,
+       (SELECT count(*)::int FROM trend_reels WHERE official = false AND added_by = $1) AS mine`,
+    [req.user.id]
+  );
+  res.json(rows[0]);
 });
 
 router.get("/categories", async (req, res) => {
+  const scope = req.query.scope === "mine" ? "mine" : "official";
   const { rows } = await q(
-    "SELECT category, count(*)::int AS n FROM trend_reels WHERE category <> '' GROUP BY category ORDER BY n DESC"
+    scope === "mine"
+      ? "SELECT category, count(*)::int AS n FROM trend_reels WHERE category <> '' AND official = false AND added_by = $1 GROUP BY category ORDER BY n DESC"
+      : "SELECT category, count(*)::int AS n FROM trend_reels WHERE category <> '' AND official = true GROUP BY category ORDER BY n DESC",
+    scope === "mine" ? [req.user.id] : []
   );
   res.json({ categories: rows });
 });
@@ -148,19 +166,22 @@ router.post("/reels", async (req, res) => {
   const url = clean(req.body.url, 500);
   if (!url) return res.status(400).json({ error: "Paste a reel link." });
   const key = normUrl(url);
-  const { rows: existing } = await q("SELECT * FROM trend_reels WHERE url_key=$1", [key]);
+  const isOfficial = req.user.role === "admin";
+  // dedupe within this owner's own set (two creators may each hold the same reel)
+  const { rows: existing } = await q(
+    "SELECT * FROM trend_reels WHERE url_key=$1 AND added_by=$2", [key, req.user.id]);
   if (existing.length) return res.json({ reel: existing[0], duplicate: true });
 
   const id = uid("tr");
   const { rows } = await q(
     `INSERT INTO trend_reels (id,url,url_key,shortcode,category,tags,caption,added_by,
-                              trend_name,trend_desc,reels_count,publish_date,audio_name,audio_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                              trend_name,trend_desc,reels_count,publish_date,audio_name,audio_url,official)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
     [id, url, key, shortcodeOf(url), clean(req.body.category, 60),
      clean(req.body.tags, 200), clean(req.body.caption, 1000), req.user.id,
      clean(req.body.trend_name, 120), clean(req.body.trend_desc, 2000),
      clean(req.body.reels_count, 40), clean(req.body.publish_date, 20),
-     clean(req.body.audio_name, 160), clean(req.body.audio_url, 500)]
+     clean(req.body.audio_name, 160), clean(req.body.audio_url, 500), isOfficial]
   );
   res.json({ reel: rows[0] });
 });
@@ -174,14 +195,15 @@ router.post("/reels/bulk", async (req, res) => {
     const url = clean(it.url, 500);
     if (!url) { skipped++; continue; }
     const key = normUrl(url);
-    const { rows: ex } = await q("SELECT id FROM trend_reels WHERE url_key=$1", [key]);
+    const { rows: ex } = await q(
+      "SELECT id FROM trend_reels WHERE url_key=$1 AND added_by=$2", [key, req.user.id]);
     if (ex.length) { skipped++; continue; }
     await q(
-      `INSERT INTO trend_reels (id,url,url_key,shortcode,category,tags,caption,added_by,trend_name,trend_desc)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO trend_reels (id,url,url_key,shortcode,category,tags,caption,added_by,trend_name,trend_desc,official)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [uid("tr"), url, key, shortcodeOf(url), clean(it.category, 60),
        clean(it.tags, 200), clean(it.caption, 1000), req.user.id,
-       clean(it.trend_name, 120), clean(it.trend_desc, 2000)]
+       clean(it.trend_name, 120), clean(it.trend_desc, 2000), req.user.role === "admin"]
     );
     added++;
   }
@@ -196,13 +218,20 @@ router.patch("/reels/:id", async (req, res) => {
   }
   if (!fields.length) return res.json({ ok: true });
   params.push(req.params.id);
-  await q(`UPDATE trend_reels SET ${fields.join(",")} WHERE id=$${params.length}`, params);
+  // admins may edit the official directory; creators only their own reels
+  const guard = req.user.role === "admin" ? "" : ` AND added_by=${req.user.id} AND official=false`;
+  await q(`UPDATE trend_reels SET ${fields.join(",")} WHERE id=$${params.length}${guard}`, params);
   res.json({ ok: true });
 });
 
-/* Admin can remove anything from the shared directory. */
-router.delete("/reels/:id", adminOnly, async (req, res) => {
-  await q("DELETE FROM trend_reels WHERE id=$1", [req.params.id]);
+/* Admins can remove anything; creators can remove their own reels. */
+router.delete("/reels/:id", async (req, res) => {
+  if (req.user.role === "admin") {
+    await q("DELETE FROM trend_reels WHERE id=$1", [req.params.id]);
+  } else {
+    await q("DELETE FROM trend_reels WHERE id=$1 AND added_by=$2 AND official=false",
+      [req.params.id, req.user.id]);
+  }
   res.json({ ok: true });
 });
 
@@ -292,6 +321,12 @@ router.post("/lists/:id/items", async (req, res) => {
   const { rows: maxr } = await q("SELECT COALESCE(MAX(position),0)::int AS m FROM trend_list_items WHERE list_id=$1", [req.params.id]);
   let pos = maxr[0].m;
   for (const rid of ids.slice(0, 200)) {
+    // only reels this user can actually see: the official directory, or their own
+    const { rows: ok } = await q(
+      "SELECT id FROM trend_reels WHERE id=$1 AND (official = true OR added_by = $2)",
+      [rid, req.user.id]
+    );
+    if (!ok.length) continue;
     await q(
       "INSERT INTO trend_list_items (list_id,reel_id,position) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
       [req.params.id, rid, ++pos]

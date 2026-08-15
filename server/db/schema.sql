@@ -116,3 +116,19 @@ ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS audio_url  TEXT NOT NULL DEFAUL
 -- Per-user tool access. NULL/empty = all live tools (default, backwards compatible).
 -- Otherwise a comma-separated list of tool ids the user may open.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tool_access TEXT;
+
+-- ============ TRENDS v2: official directory + private per-creator reels ============
+-- A reel is either OFFICIAL (curated by an admin, visible to everyone) or private to
+-- the creator who added it.
+ALTER TABLE trend_reels ADD COLUMN IF NOT EXISTS official BOOLEAN NOT NULL DEFAULT false;
+
+-- Anything already in the directory was added by the admin, so it becomes official.
+UPDATE trend_reels SET official = true
+ WHERE official = false
+   AND added_by IN (SELECT id FROM users WHERE role = 'admin');
+
+-- Dedupe was global ("one row per URL ever"). Now two creators may each hold the same
+-- reel privately, so uniqueness becomes per-owner instead.
+ALTER TABLE trend_reels DROP CONSTRAINT IF EXISTS trend_reels_url_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_reels_owner_url ON trend_reels (added_by, url_key);
+CREATE INDEX IF NOT EXISTS idx_trend_reels_official ON trend_reels (official);

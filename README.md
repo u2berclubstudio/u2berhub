@@ -142,3 +142,16 @@ Enforcement is server-side, not just UI: revoked tools disappear from the hub AN
 return 403 (`/api/contentflow/*`, `/api/trends/*`, `/api/data/<tool>`). Published TRENDS list
 pages stay public regardless — permissions never break sharing.
 Stored as `users.tool_access` (NULL = all tools, so existing users are unaffected).
+
+
+### TRENDS v2 — official directory + private reels
+The directory is no longer one shared pool. Browse has two tabs:
+- **U2berClub Trends** — reels added by an **admin**, flagged `official`, visible to every creator.
+  This is the curated trend desk; it's what a new user sees on day one.
+- **My reels** — reels a creator adds themselves. Private to them; no other creator ever sees them.
+
+Notes stay private in both cases. Lists can mix official and own reels, and publishing works
+the same. Dedupe is now per-owner (two creators may each keep their own copy of the same reel).
+Adding a reel to a list is checked server-side — a creator can only add reels they can see,
+so a guessed reel id can't pull someone else's private reel into a list.
+Existing reels added by an admin are auto-marked official on migration.
