@@ -155,3 +155,34 @@ the same. Dedupe is now per-owner (two creators may each keep their own copy of 
 Adding a reel to a list is checked server-side — a creator can only add reels they can see,
 so a guessed reel id can't pull someone else's private reel into a list.
 Existing reels added by an admin are auto-marked official on migration.
+
+
+## Secrets live in .env (not in git)
+`ecosystem.config.cjs` no longer holds any secrets, so `git pull` can never overwrite your
+config again. On the server, create `/root/u2berhub/.env`:
+
+```
+PORT=4000
+DATABASE_URL=postgres://u2ber:YOUR_DB_PASSWORD@localhost:5432/u2berhub
+ADMIN_EMAIL=you@example.com
+ADMIN_PASSWORD=a-strong-admin-password
+ADMIN_NAME=Admin
+```
+
+`.env` is git-ignored and read at boot by `server/env.js` (loaded first thing in
+`server/db/index.js`, before the connection pool is built). Real environment variables still
+win over the file, so PM2 or CI can override anything. See `.env.example`.
+
+
+## ContentFlow v3 — channel, ideas, multi-script
+Stages are now **Channel -> Idea -> Inspiration -> Script -> Shoot -> Edit -> Post**.
+- **Channel** (new first tab) — pick the channel, tick the pillars. Channels and their pillars
+  are stored per-user and reused by every project on that channel. Multiple pillars per project.
+- **Idea** — one box. Type, add, it stacks below, newest first. Nothing overwrites.
+- **Script** — a project holds many drafts, each with full structure (hooks + shot blocks).
+  Rename, duplicate, delete. Rewriting never destroys the previous draft.
+- **Shoot** — a dropdown picks which draft you are filming; the shot list follows that draft,
+  and tick-offs stay tied to their own draft.
+- **Inspiration** — each reference carries "Why saved" chips (Hook, Story, Editing, Camera,
+  Transition, Acting, Music, CTA, Concept).
+Old projects migrate automatically.

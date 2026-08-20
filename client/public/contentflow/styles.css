@@ -284,3 +284,52 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
   font-family: inherit; font-size: 12.5px; background: #fff;
 }
 .stage-datebar input[type=date]:focus { outline: none; border-color: var(--amber); }
+
+/* ---- channel + pillars ---- */
+.pillar-chip {
+  font-family: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 16px;
+  border: 1px solid var(--border); background: #fff; color: var(--ink-soft); cursor: pointer;
+}
+.pillar-chip:hover { border-color: var(--ink); }
+.pillar-chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.pillar-chip:disabled { cursor: default; }
+
+/* ---- ideas list ---- */
+.idea-row {
+  border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px;
+  margin-bottom: 8px; background: #fff;
+}
+.idea-text { font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; }
+.idea-meta {
+  margin-top: 7px; font-family: monospace; font-size: 11px; color: var(--ink-soft);
+  display: flex; gap: 10px; align-items: center;
+}
+.link-btn-sm {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 11px; color: var(--amber); text-decoration: underline;
+}
+.link-btn-sm.danger { color: var(--red); }
+
+/* ---- script drafts ---- */
+.script-tab {
+  font-family: inherit; font-size: 13px; font-weight: 600; padding: 9px 14px;
+  border-radius: 9px; border: 1px solid var(--border); background: #fff;
+  cursor: pointer; text-align: left; color: var(--ink);
+}
+.script-tab:hover { border-color: var(--ink); }
+.script-tab.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.script-tab-meta { display: block; font-family: monospace; font-size: 10px; opacity: .65; margin-top: 2px; font-weight: 400; }
+
+/* ---- why-saved reasons ---- */
+.reason-row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: 9px; }
+.reason-lbl {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-soft); font-weight: 700; margin-right: 3px;
+}
+.reason-chip {
+  font-family: inherit; font-size: 11px; padding: 3px 9px; border-radius: 12px;
+  border: 1px solid var(--border); background: #fff; color: var(--ink-soft); cursor: pointer;
+}
+.reason-chip:hover { border-color: var(--amber); }
+.reason-chip.on { background: var(--amber); color: #fff; border-color: var(--amber); }
+.reason-chip:disabled { cursor: default; opacity: .8; }

@@ -1,3 +1,6 @@
+import { loadEnv } from "./env.js";
+loadEnv();   // also loaded in db/index.js — this covers PORT and admin seeding
+
 import express from "express";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";

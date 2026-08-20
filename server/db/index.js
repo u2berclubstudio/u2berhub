@@ -1,3 +1,6 @@
+import { loadEnv } from "../env.js";
+loadEnv();   // secrets must be present before the pool is created
+
 import pg from "pg";
 import fs from "fs";
 import path from "path";

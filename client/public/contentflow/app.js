@@ -1,5 +1,6 @@
-const STAGES = ["idea", "inspiration", "script", "shoot", "edit", "post"];
+const STAGES = ["channel", "idea", "inspiration", "script", "shoot", "edit", "post"];
 const STAGE_LABELS = {
+  channel: "Channel",
   idea: "Idea",
   inspiration: "Inspiration",
   script: "Script",
@@ -30,6 +31,10 @@ async function api(path, opts) {
   return res.json();
 }
 
+async function loadProjectsAndChannels() {
+  await Promise.all([loadProjects(), loadChannels()]);
+}
+
 async function loadProjects() {
   state.projects = await api("/projects");
 }
@@ -37,7 +42,7 @@ async function loadProjects() {
 // ---------- Role permissions ----------
 // Which stages a role is allowed to EDIT. Every role can always VIEW every stage (read-only elsewhere).
 const EDIT_PERMISSIONS = {
-  strategist: ["idea", "inspiration", "script", "shoot", "edit", "post"],
+  strategist: ["channel", "idea", "inspiration", "script", "shoot", "edit", "post"],
   videographer: ["shoot"],
   editor: ["edit"],
 };
@@ -137,7 +142,8 @@ function renderDetail(project) {
     : `<div class="readonly-banner">Viewing as ${roleLabel(state.role)} — this stage is read-only for context. You can edit the ${STAGE_LABELS[EDIT_PERMISSIONS[state.role][0]] || ""} tab.</div>`;
 
   let body = "";
-  if (state.activeTab === "inspiration") body = renderInspiration(project, editable);
+  if (state.activeTab === "channel") body = renderChannel(project, editable);
+  else if (state.activeTab === "inspiration") body = renderInspiration(project, editable);
   else if (state.activeTab === "idea") body = renderIdea(project, editable);
   else if (state.activeTab === "script") body = renderScript(project, editable);
   else if (state.activeTab === "shoot") body = renderShoot(project, editable);
@@ -280,6 +286,7 @@ async function changeStage(id, stage) {
 
 // ---------- Inspiration tab ----------
 // Shot-breakdown vocabulary (from the U2berClub shot-breakdown-analyzer)
+const SAVE_REASONS = ["Hook", "Story", "Editing", "Camera", "Transition", "Acting", "Music", "CTA", "Concept"];
 const SHOT_TYPES = ["Extreme close-up", "Close-up", "Medium close-up", "Medium", "Medium-wide", "Wide", "Extreme-wide / establishing"];
 const SHOT_ANGLES = ["Eye-level", "Low angle", "High angle", "Dutch / tilted", "Overhead / top-down"];
 const SHOT_MOVES = ["Static", "Handheld", "Pan", "Tilt", "Push in", "Pull out", "Snap zoom", "Whip / whip-pan", "Tracking / follow", "Orbit"];
@@ -532,6 +539,13 @@ function renderInspiration(project, editable) {
         <div class="insp-platform">${escapeHtml(i.platform || "")}</div>
         ${!insta ? `<a class="insp-url" href="${escapeAttr(i.url)}" target="_blank" rel="noopener">${escapeHtml(i.url)}</a>` : ""}
         <div class="insp-note">${escapeHtml(i.note)}</div>
+        <div class="reason-row">
+          <span class="reason-lbl">Why saved:</span>
+          ${SAVE_REASONS.map((r) => {
+            const on = (i.reasons || []).includes(r);
+            return `<button class="reason-chip ${on ? "on" : ""}" ${editable ? `onclick="toggleReason('${project.id}','${i.id}','${r}')"` : "disabled"}>${r}</button>`;
+          }).join("")}
+        </div>
         <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn btn-sm" onclick="openShotStudy('${project.id}','${i.id}')">🎬 ${shotCount ? `Shots (${shotCount})` : "Break down shots"}</button>
           ${shotCount ? `<span class="muted" style="font-size:11px;">${(i.shots || []).map((s) => s.time).join(" · ")}</span>` : ""}
@@ -578,6 +592,15 @@ async function addInspiration(id) {
   await api(`/projects/${id}/inspirations`, { method: "POST", body: JSON.stringify({ platform, url, note }) });
   await loadProjects();
   render();
+}
+
+async function toggleReason(pid, inspId, reason) {
+  const project = getProject(pid);
+  const insp = project.inspirations.find((x) => x.id === inspId);
+  const cur = insp.reasons || [];
+  const next = cur.includes(reason) ? cur.filter((r) => r !== reason) : [...cur, reason];
+  await api(`/projects/${pid}/inspirations/${inspId}/reasons`, { method: "PATCH", body: JSON.stringify({ reasons: next }) });
+  await loadProjects(); render();
 }
 
 // ---------- Shot study: break a reel into timestamped shots ----------
@@ -1026,65 +1049,202 @@ async function confirmImport(projectId) {
 }
 
 // ---------- Idea tab ----------
-function renderIdea(project, editable) {
-  const linked = project.idea.linkedInspirationIds
-    .map((iid) => project.inspirations.find((i) => i.id === iid))
-    .filter(Boolean);
+function renderChannel(project, editable) {
+  const chans = state.channels || [];
+  const ch = chans.find((c) => c.id === project.channelId);
+  const pillars = ch ? (ch.pillars || []) : [];
+  const chosen = project.pillarIds || [];
 
   return `
     <div class="section">
-      <div class="section-title">Raw idea</div>
-      ${
-        editable
-          ? `<textarea id="idea-raw" rows="3">${escapeHtml(project.idea.rawIdea)}</textarea>
-             <div style="margin-top:10px;"></div>
-             <label class="field-label">Angle / POV for this brand</label>
-             <textarea id="idea-angle" rows="2">${escapeHtml(project.idea.angle)}</textarea>
-             <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="saveIdea('${project.id}')">Save</button>`
-          : `<div class="block-dialogue" style="font-weight:400;font-size:14px;">${escapeHtml(project.idea.rawIdea) || '<span class="empty-state">No idea written yet.</span>'}</div>
-             ${project.idea.angle ? `<div style="margin-top:10px;"><span class="field-label">Angle</span><div>${escapeHtml(project.idea.angle)}</div></div>` : ""}`
-      }
+      <div class="section-title">Channel</div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Which channel is this for? Pillars are remembered per channel, so you only ever type them once.</p>
+      ${editable ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="ch-select" class="input-sm" style="min-width:220px;" onchange="setChannel('${project.id}', this.value)">
+            <option value="">— pick a channel —</option>
+            ${chans.map((c) => `<option value="${c.id}" ${c.id === project.channelId ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
+          </select>
+          <button class="btn btn-sm" onclick="addChannel('${project.id}')">+ New channel</button>
+        </div>`
+        : `<div style="font-size:15px;font-weight:600;">${ch ? escapeHtml(ch.name) : '<span class="empty-state">No channel set.</span>'}</div>`}
     </div>
+
     <div class="section">
-      <div class="section-title">Built on these references</div>
-      ${
-        linked.length
-          ? linked.map((i) => `<div class="insp-item ${isInstagramUrl(i.url) ? "insp-item-embed" : ""}">${instagramEmbedHtml(i.url)}<div class="insp-body"><div class="insp-note">${escapeHtml(i.note)}</div></div></div>`).join("")
-          : '<div class="empty-state">No references linked.</div>'
-      }
-    </div>
-  `;
+      <div class="section-title">Content pillars</div>
+      ${!ch ? '<div class="empty-state">Pick a channel first.</div>' : `
+        <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Tick every pillar this video belongs to. Months from now this is what tells you which kind of content actually worked.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">
+          ${pillars.length ? pillars.map((pl) => {
+            const on = chosen.includes(pl.id);
+            return `<button class="pillar-chip ${on ? "on" : ""}" ${editable ? `onclick="togglePillar('${project.id}','${pl.id}')"` : "disabled"}>${escapeHtml(pl.name)}</button>`;
+          }).join("") : '<span class="empty-state">No pillars on this channel yet.</span>'}
+        </div>
+        ${editable ? `<button class="btn btn-sm" onclick="addPillar('${project.id}','${ch.id}')">+ New pillar</button>` : ""}
+      `}
+    </div>`;
 }
 
-async function saveIdea(id) {
-  const rawIdea = document.getElementById("idea-raw").value;
-  const angle = document.getElementById("idea-angle").value;
-  await api(`/projects/${id}/idea`, { method: "PATCH", body: JSON.stringify({ rawIdea, angle }) });
-  await loadProjects();
-  render();
+async function loadChannels() {
+  try { const r = await api("/channels"); state.channels = r.channels || []; }
+  catch { state.channels = []; }
+}
+async function setChannel(pid, channelId) {
+  await api(`/projects/${pid}/channel`, { method: "PATCH", body: JSON.stringify({ channelId, pillarIds: [] }) });
+  await loadProjects(); render();
+}
+async function addChannel(pid) {
+  const name = prompt("Channel name (e.g. U2berClub Instagram):");
+  if (!name || !name.trim()) return;
+  const r = await api("/channels", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  await loadChannels();
+  await api(`/projects/${pid}/channel`, { method: "PATCH", body: JSON.stringify({ channelId: r.channel.id, pillarIds: [] }) });
+  await loadProjects(); render();
+}
+async function addPillar(pid, channelId) {
+  const name = prompt("Pillar name (e.g. Mockumentary skits):");
+  if (!name || !name.trim()) return;
+  await api(`/channels/${channelId}/pillars`, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  await loadChannels(); render();
+}
+async function togglePillar(pid, pillarId) {
+  const project = getProject(pid);
+  const cur = project.pillarIds || [];
+  const next = cur.includes(pillarId) ? cur.filter((x) => x !== pillarId) : [...cur, pillarId];
+  await api(`/projects/${pid}/channel`, { method: "PATCH", body: JSON.stringify({ pillarIds: next }) });
+  await loadProjects(); render();
+}
+
+// ---------- Idea tab: one box, ideas stack below ----------
+function renderIdea(project, editable) {
+  const ideas = project.ideas || [];
+  return `
+    <div class="section">
+      <div class="section-title">Raw idea</div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Dump the thought as it comes. Nothing gets overwritten — every idea stays in the list below.</p>
+      ${editable ? `
+        <textarea id="idea-box" rows="3" placeholder="What if the shopkeeper argued with the delivery guy about..."></textarea>
+        <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="addIdea('${project.id}')">+ Add idea</button>
+      ` : ""}
+    </div>
+
+    <div class="section">
+      <div class="section-title">Ideas recorded <span class="chip">${ideas.length}</span></div>
+      ${ideas.length ? ideas.map((i) => `
+        <div class="idea-row" id="idea-${i.id}">
+          <div class="idea-text">${escapeHtml(i.text)}</div>
+          <div class="idea-meta">
+            ${new Date(i.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+            ${editable ? `
+              <button class="link-btn-sm" onclick="editIdea('${project.id}','${i.id}')">edit</button>
+              <button class="link-btn-sm danger" onclick="deleteIdea('${project.id}','${i.id}')">delete</button>` : ""}
+          </div>
+        </div>`).join("")
+        : '<div class="empty-state">Nothing captured yet.</div>'}
+    </div>`;
+}
+
+async function addIdea(pid) {
+  const el = document.getElementById("idea-box");
+  const text = (el.value || "").trim();
+  if (!text) return;
+  await api(`/projects/${pid}/ideas`, { method: "POST", body: JSON.stringify({ text }) });
+  el.value = "";
+  await loadProjects(); render();
+}
+async function editIdea(pid, ideaId) {
+  const project = getProject(pid);
+  const idea = (project.ideas || []).find((i) => i.id === ideaId);
+  const text = prompt("Edit idea:", idea ? idea.text : "");
+  if (text == null) return;
+  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ text }) });
+  await loadProjects(); render();
+}
+async function deleteIdea(pid, ideaId) {
+  if (!confirm("Delete this idea?")) return;
+  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "DELETE" });
+  await loadProjects(); render();
 }
 
 // ---------- Script tab ----------
+/* Shots you captured on inspiration reels — reference while writing, click to stamp. */
+function renderShotRefPanel(project, editable) {
+  const all = [];
+  (project.inspirations || []).forEach((i) => {
+    (i.shots || []).forEach((sh) => all.push({ ...sh, from: i.note || i.platform || i.url, inspId: i.id }));
+  });
+  state._scriptShots = all;
+  if (!all.length) return "";
+  return `
+    <div class="section" style="background:var(--cream);border:1px solid var(--border);">
+      <div class="section-title" style="font-size:13px;display:flex;align-items:center;gap:8px;">
+        🎬 Shots you studied <span class="chip">${all.length}</span>
+        <span class="muted" style="font-weight:400;font-size:11px;">${editable ? "click a shot to fill the block form below" : "reference while you write"}</span>
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">
+        ${all.map((sh, idx) => `
+          <div class="shot-ref-card" ${editable ? `onclick="stampShot(${idx})" style="cursor:pointer;"` : ""}
+               style="flex:0 0 200px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;">
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="chip" style="font-family:monospace;">${escapeHtml(sh.time || "")}</span>
+              <b style="font-size:12.5px;">${escapeHtml(sh.type || "—")}</b>
+            </div>
+            ${(sh.angle || sh.move) ? `<div class="muted" style="font-size:11px;margin-top:3px;">${[sh.angle, sh.move].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
+            ${sh.note ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.4;">${escapeHtml(sh.note)}</div>` : ""}
+            <div class="muted" style="font-size:10px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↪ ${escapeHtml(sh.from)}</div>
+            ${editable ? `<div style="font-size:10px;color:var(--amber);margin-top:5px;font-weight:600;">+ use in block</div>` : ""}
+          </div>`).join("")}
+      </div>
+    </div>`;
+}
+
+function activeScript(project) {
+  const list = project.scripts || [];
+  if (!list.length) return null;
+  const openId = state.openScriptId && list.some((x) => x.id === state.openScriptId)
+    ? state.openScriptId : list[0].id;
+  return list.find((x) => x.id === openId);
+}
+
 function renderScript(project, editable) {
-  const hooks = project.script.hooks
-    .map(
-      (h) => `
+  const list = project.scripts || [];
+  const sc = activeScript(project);
+
+  const chooser = `
+    <div class="section">
+      <div class="section-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        Scripts <span class="chip">${list.length}</span>
+        ${editable ? `<span style="margin-left:auto;"><button class="btn btn-primary btn-sm" onclick="addScript('${project.id}')">+ New script</button></span>` : ""}
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Rewrite as many times as you like — every draft stays here. Nothing you wrote is ever lost.</p>
+      ${list.length ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${list.map((x) => `
+            <button class="script-tab ${sc && x.id === sc.id ? "on" : ""}" onclick="openScript('${x.id}')">
+              ${escapeHtml(x.title)}
+              <span class="script-tab-meta">${(x.blocks || []).length} shots</span>
+            </button>`).join("")}
+        </div>` : '<div class="empty-state">No scripts yet. Make your first draft.</div>'}
+    </div>`;
+
+  if (!sc) return chooser;
+
+  const hooks = (sc.hooks || []).map((h) => `
     <div class="hook-card ${h.selected ? "selected" : ""}">
       ${h.selected ? '<div class="selected-tag">Selected</div>' : ""}
-      <div class="hook-version">Version ${h.version}</div>
+      <div class="hook-version">Version ${escapeHtml(h.version || "")}</div>
       <div class="hook-text">${escapeHtml(h.text)}</div>
       ${h.notes ? `<div class="hook-notes">${escapeHtml(h.notes)}</div>` : ""}
       ${editable && !h.selected ? `<button class="btn btn-ghost btn-sm" onclick="selectHook('${project.id}','${h.id}')">Use this one</button>` : ""}
-    </div>`
-    )
-    .join("");
+    </div>`).join("");
 
-  const blocks = project.script.blocks
-    .map((b) => {
-      const ref = b.referenceInspirationId ? project.inspirations.find((i) => i.id === b.referenceInspirationId) : null;
-      return `
+  const blocks = (sc.blocks || []).map((b) => {
+    const ref = b.referenceInspirationId ? project.inspirations.find((i) => i.id === b.referenceInspirationId) : null;
+    return `
       <div class="block-card">
-        <div><span class="block-num">${b.order}</span></div>
+        <div><span class="block-num">${b.order}</span>
+          ${editable ? `<button class="link-btn-sm danger" style="float:right;" onclick="deleteBlock('${project.id}','${b.id}')">remove</button>` : ""}
+        </div>
         <div class="block-dialogue">${escapeHtml(b.dialogue)}</div>
         <div class="block-tags">
           ${b.shotType ? `<span class="tag">${escapeHtml(b.shotType)}</span>` : ""}
@@ -1096,144 +1256,174 @@ function renderScript(project, editable) {
         ${b.onScreenText ? `<div style="font-size:12px;color:var(--ink-soft);">On-screen text: ${escapeHtml(b.onScreenText)}</div>` : ""}
         ${ref ? `<div class="block-ref">🔗 Shot reference: ${escapeHtml(ref.note)}</div>` : ""}
       </div>`;
-    })
-    .join("");
-
-  // Reference panel: every shot the user captured across all inspiration reels.
-  const allShots = [];
-  project.inspirations.forEach((i) => {
-    (i.shots || []).forEach((s) => allShots.push({ ...s, from: i.note || i.platform || i.url, url: i.url, inspId: i.id }));
-  });
-  const shotRef = allShots.length ? `
-    <div class="section" style="background:var(--cream);border:1px solid var(--border);">
-      <div class="section-title" style="font-size:13px;display:flex;align-items:center;gap:8px;">
-        🎬 Shots you studied <span class="chip">${allShots.length}</span>
-        <span class="muted" style="font-weight:400;font-size:11px;">${editable ? "click a shot to fill the block form below" : "reference while you write"}</span>
-      </div>
-      <div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">
-        ${allShots.map((s, idx) => `
-          <div ${editable ? `onclick="stampShot(${idx})" style="cursor:pointer;"` : ""} class="shot-ref-card" style="flex:0 0 200px;border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:#fff;transition:.12s;">
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
-              <b style="font-size:12.5px;">${escapeHtml(s.type || "—")}</b>
-            </div>
-            ${(s.angle || s.move) ? `<div class="muted" style="font-size:11px;margin-top:3px;">${[s.angle, s.move].filter(Boolean).map(escapeHtml).join(" · ")}</div>` : ""}
-            ${s.note ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.4;">${escapeHtml(s.note)}</div>` : ""}
-            <div class="muted" style="font-size:10px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">↪ ${escapeHtml(s.from)}</div>
-            ${editable ? `<div style="font-size:10px;color:var(--amber);margin-top:5px;font-weight:600;">+ use in block</div>` : ""}
-          </div>`).join("")}
-      </div>
-    </div>` : "";
-  // stash for stampShot to read
-  state._scriptShots = allShots;
+  }).join("");
 
   return `
-    ${shotRef}
+    ${chooser}
+    <div class="section">
+      <div class="section-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        ${escapeHtml(sc.title)}
+        ${editable ? `<span style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" onclick="renameScript('${project.id}','${sc.id}')">Rename</button>
+          <button class="btn btn-sm" onclick="duplicateScript('${project.id}','${sc.id}')">Duplicate</button>
+          <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="deleteScript('${project.id}','${sc.id}')">Delete</button>
+        </span>` : ""}
+      </div>
+    </div>
+
+    ${renderShotRefPanel(project, editable)}
+
     <div class="section">
       <div class="section-title">Hook options</div>
-      <div class="hook-list">${hooks || '<div class="empty-state">No hooks written yet.</div>'}</div>
-      ${
-        editable
-          ? `<div class="inline-form" style="margin-top:14px;">
-              <div class="field"><label class="field-label">Hook text</label><input type="text" id="hook-text" placeholder="\"...\""></div>
-              <div class="field"><label class="field-label">Notes</label><input type="text" id="hook-notes" placeholder="Delivery, tone..."></div>
-              <button class="btn btn-primary btn-sm" onclick="addHook('${project.id}')">+ Add hook</button>
-            </div>`
-          : ""
-      }
+      ${hooks || '<div class="empty-state">No hooks written yet.</div>'}
+      ${editable ? `
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+          <div class="field" style="flex:2;min-width:200px;"><label class="field-label">Hook text</label><input type="text" id="hook-text"></div>
+          <div class="field" style="flex:1;min-width:160px;"><label class="field-label">Notes</label><input type="text" id="hook-notes" placeholder="Delivery, tone..."></div>
+          <button class="btn btn-primary btn-sm" style="align-self:flex-end;margin-bottom:12px;" onclick="addHook('${project.id}')">+ Add hook</button>
+        </div>` : ""}
     </div>
+
     <div class="section">
       <div class="section-title">Shot-by-shot script</div>
       ${blocks || '<div class="empty-state">No script blocks yet.</div>'}
       ${editable ? renderAddBlockForm(project) : ""}
-    </div>
-  `;
+    </div>`;
 }
 
+// Click a captured shot -> fill the block form with its framing.
 function renderAddBlockForm(project) {
-  const refOptions = project.inspirations.map((i) => `<option value="${i.id}">${escapeHtml(i.note.slice(0, 40))}...</option>`).join("");
+  const insp = project.inspirations || [];
   return `
-    <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px;">
-      <div class="field"><label class="field-label">Dialogue / VO / action</label><textarea id="block-dialogue" rows="2"></textarea></div>
-      <div class="inline-form">
-        <div class="field"><label class="field-label">Shot type</label><input type="text" id="block-shottype" placeholder="Close-up"></div>
-        <div class="field"><label class="field-label">Angle</label><input type="text" id="block-angle" placeholder="Eye-level"></div>
-        <div class="field"><label class="field-label">Movement</label><input type="text" id="block-movement" placeholder="Static"></div>
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:16px;">
+      <div class="field"><label class="field-label">Dialogue / VO / action</label>
+        <textarea id="block-dialogue" rows="2"></textarea></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:140px;"><label class="field-label">Shot type</label>
+          <input type="text" id="block-shottype" placeholder="Close-up"></div>
+        <div class="field" style="flex:1;min-width:140px;"><label class="field-label">Angle</label>
+          <input type="text" id="block-angle" placeholder="Eye-level"></div>
+        <div class="field" style="flex:1;min-width:140px;"><label class="field-label">Movement</label>
+          <input type="text" id="block-movement" placeholder="Static"></div>
       </div>
-      <div class="inline-form">
-        <div class="field"><label class="field-label">Location</label><input type="text" id="block-location" placeholder="Studio"></div>
-        <div class="field"><label class="field-label">Props/notes</label><input type="text" id="block-props" placeholder=""></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:160px;"><label class="field-label">Location</label>
+          <input type="text" id="block-location" placeholder="Studio"></div>
+        <div class="field" style="flex:1;min-width:160px;"><label class="field-label">Props/notes</label>
+          <input type="text" id="block-props"></div>
       </div>
-      <div class="field"><label class="field-label">On-screen text</label><input type="text" id="block-onscreen" placeholder=""></div>
-      <div class="field">
-        <label class="field-label">Shot reference (which inspiration is this beat from?)</label>
-        <select id="block-ref"><option value="">— none —</option>${refOptions}</select>
-      </div>
+      <div class="field"><label class="field-label">On-screen text</label>
+        <input type="text" id="block-onscreen"></div>
+      <div class="field"><label class="field-label">Shot reference (which inspiration is this beat from?)</label>
+        <select id="block-ref" class="input-sm" style="min-width:220px;">
+          <option value="">— none —</option>
+          ${insp.map((i) => `<option value="${i.id}">${escapeHtml((i.note || i.url || "").slice(0, 60))}</option>`).join("")}
+        </select></div>
       <button class="btn btn-primary btn-sm" onclick="addBlock('${project.id}')">+ Add shot to script</button>
-    </div>
-  `;
+    </div>`;
 }
 
-// Click a captured shot -> fill the block form with its type/angle/movement/note.
 function stampShot(idx) {
-  const s = (state._scriptShots || [])[idx];
-  if (!s) return;
+  const sh = (state._scriptShots || [])[idx];
+  if (!sh) return;
   const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
-  set("block-shottype", s.type || "");
-  set("block-angle", s.angle || "");
-  set("block-movement", s.move || "");
-  // carry the study note into props/notes without clobbering anything already typed
+  set("block-shottype", sh.type || "");
+  set("block-angle", sh.angle || "");
+  set("block-movement", sh.move || "");
   const props = document.getElementById("block-props");
   if (props) {
-    const ref = `ref ${s.time}${s.note ? ": " + s.note : ""}`;
+    const ref = `ref ${sh.time || ""}${sh.note ? ": " + sh.note : ""}`.trim();
     props.value = props.value.trim() ? props.value + " · " + ref : ref;
   }
-  // if this shot came from a known inspiration reel, preselect it in the ref dropdown
-  const ref = document.getElementById("block-ref");
-  if (ref && s.inspId) { ref.value = s.inspId; }
-  // pull focus to the dialogue field so they can type the line for this shot
+  const refSel = document.getElementById("block-ref");
+  if (refSel && sh.inspId) refSel.value = sh.inspId;
   const dlg = document.getElementById("block-dialogue");
   if (dlg) { dlg.scrollIntoView({ behavior: "smooth", block: "center" }); dlg.focus(); }
 }
 
+function openScript(id) { state.openScriptId = id; render(); }
+
+async function addScript(pid) {
+  const title = prompt("Name this draft:", "Draft " + (((getProject(pid).scripts || []).length) + 1));
+  if (title == null) return;
+  const sc = await api(`/projects/${pid}/scripts`, { method: "POST", body: JSON.stringify({ title }) });
+  state.openScriptId = sc.id;
+  await loadProjects(); render();
+}
+async function renameScript(pid, sid) {
+  const sc = (getProject(pid).scripts || []).find((x) => x.id === sid);
+  const title = prompt("Rename script:", sc ? sc.title : "");
+  if (title == null) return;
+  await api(`/projects/${pid}/scripts/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) });
+  await loadProjects(); render();
+}
+async function duplicateScript(pid, sid) {
+  const copy = await api(`/projects/${pid}/scripts/${sid}/duplicate`, { method: "POST" });
+  state.openScriptId = copy.id;
+  await loadProjects(); render();
+}
+async function deleteScript(pid, sid) {
+  if (!confirm("Delete this draft? Its shots and hooks go with it. Other drafts stay.")) return;
+  await api(`/projects/${pid}/scripts/${sid}`, { method: "DELETE" });
+  state.openScriptId = null;
+  await loadProjects(); render();
+}
 
 async function selectHook(id, hookId) {
-  await api(`/projects/${id}/hooks/${hookId}/select`, { method: "POST" });
-  await loadProjects();
-  render();}
-
+  const sc = activeScript(getProject(id));
+  await api(`/projects/${id}/scripts/${sc.id}/hooks/${hookId}/select`, { method: "POST" });
+  await loadProjects(); render();
+}
 async function addHook(id) {
+  const sc = activeScript(getProject(id));
   const text = document.getElementById("hook-text").value;
   const notes = document.getElementById("hook-notes").value;
   if (!text) return;
-  await api(`/projects/${id}/hooks`, { method: "POST", body: JSON.stringify({ text, notes }) });
-  await loadProjects();
-  render();
+  await api(`/projects/${id}/scripts/${sc.id}/hooks`, { method: "POST", body: JSON.stringify({ text, notes }) });
+  await loadProjects(); render();
 }
-
 async function addBlock(id) {
-  const dialogue = document.getElementById("block-dialogue").value;
-  const shotType = document.getElementById("block-shottype").value;
-  const angle = document.getElementById("block-angle").value;
-  const movement = document.getElementById("block-movement").value;
-  const location = document.getElementById("block-location").value;
-  const props = document.getElementById("block-props").value;
-  const onScreenText = document.getElementById("block-onscreen").value;
-  const referenceInspirationId = document.getElementById("block-ref").value || null;
-  if (!dialogue) return;
-  await api(`/projects/${id}/blocks`, {
-    method: "POST",
-    body: JSON.stringify({ dialogue, shotType, angle, movement, location, props, onScreenText, referenceInspirationId }),
-  });
-  await loadProjects();
-  render();
+  const sc = activeScript(getProject(id));
+  if (!sc) { alert("Make a script first."); return; }
+  const g = (k) => (document.getElementById(k) || {}).value || "";
+  const body = {
+    dialogue: g("block-dialogue"), shotType: g("block-shottype"), angle: g("block-angle"),
+    movement: g("block-movement"), location: g("block-location"), props: g("block-props"),
+    onScreenText: g("block-onscreen"), referenceInspirationId: g("block-ref") || null,
+  };
+  if (!body.dialogue.trim()) return;
+  await api(`/projects/${id}/scripts/${sc.id}/blocks`, { method: "POST", body: JSON.stringify(body) });
+  await loadProjects(); render();
+}
+async function deleteBlock(pid, blockId) {
+  const sc = activeScript(getProject(pid));
+  if (!confirm("Remove this shot from the script?")) return;
+  await api(`/projects/${pid}/scripts/${sc.id}/blocks/${blockId}`, { method: "DELETE" });
+  await loadProjects(); render();
 }
 
-// ---------- Shoot tab ----------
 function renderShoot(project, editable) {
-  const rows = project.shoot.shots
+  const list = project.scripts || [];
+  const sid = project.shoot.scriptId;
+  const filming = list.find((x) => x.id === sid);
+
+  const picker = `
+    <div class="section">
+      <div class="section-title">Which script are you filming?</div>
+      ${list.length ? `
+        <select class="input-sm" style="min-width:260px;" ${editable ? `onchange="setShootScript('${project.id}', this.value)"` : "disabled"}>
+          <option value="">— pick a draft —</option>
+          ${list.map((x) => `<option value="${x.id}" ${x.id === sid ? "selected" : ""}>${escapeHtml(x.title)} (${(x.blocks || []).length} shots)</option>`).join("")}
+        </select>
+        <p class="muted" style="font-size:12px;margin-top:8px;">The shot list below is built from this draft. Ticking shots here only affects this draft.</p>`
+        : '<div class="empty-state">No scripts yet — write one in the Script tab first.</div>'}
+    </div>`;
+
+  const blocksOf = filming ? (filming.blocks || []) : [];
+  const rows = (project.shoot.shots || [])
+    .filter((s) => s.scriptId === sid)
     .map((s) => {
-      const block = project.script.blocks.find((b) => b.id === s.blockId);
+      const block = blocksOf.find((b) => b.id === s.blockId);
       if (!block) return "";
       const ref = block.referenceInspirationId ? project.inspirations.find((i) => i.id === block.referenceInspirationId) : null;
       return `
@@ -1271,6 +1461,7 @@ function renderShoot(project, editable) {
     .join("");
 
   return `
+    ${picker}
     <div class="section">
       <div class="section-title">Shoot logistics</div>
       ${
@@ -1299,6 +1490,11 @@ async function saveShootMeta(id) {
   await api(`/projects/${id}/shoot-meta`, { method: "PATCH", body: JSON.stringify({ date, location, generalNotes }) });
   await loadProjects();
   render();
+}
+
+async function setShootScript(pid, scriptId) {
+  await api(`/projects/${pid}/shoot-script`, { method: "PATCH", body: JSON.stringify({ scriptId }) });
+  await loadProjects(); render();
 }
 
 async function updateShotStatus(id, blockId, status) {
@@ -1445,6 +1641,7 @@ function escapeAttr(str) { return escapeHtml(str); }
 
 // ---------- Boot ----------
 (async function init() {
+  await loadChannels();
   await loadProjects();
   render();
 })();
