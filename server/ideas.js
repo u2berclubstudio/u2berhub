@@ -84,7 +84,7 @@ router.post("/import", async (req, res) => {
   if (!items) return res.status(400).json({ error: "Expected { items: [...] }" });
   if (items.length > 5000) return res.status(413).json({ error: "Too many items in one file." });
 
-  let imported = 0, skipped = 0;
+  let imported = 0, skipped = 0;   // imported = nayi ya enrich hui
   for (const it of items) {
     const raw = clean(it.raw_dictation, 8000);
     if (!raw) { skipped++; continue; }
@@ -92,7 +92,18 @@ router.post("/import", async (req, res) => {
       `INSERT INTO ideas (id,user_id,title,spoken_at,type,brand,category,status,
                           summary,raw_dictation,needs_review,flags,source,app,dedupe_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'Inbox',$8,$9,$10,$11,$12,$13,$14)
-       ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING`,
+       ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET
+         -- A curated re-upload upgrades a row that hasn't been curated yet:
+         -- better title, summary, categories, flags all land. Brand is the one
+         -- thing you may have set by hand in the table, so that always wins.
+         title    = EXCLUDED.title,
+         summary  = EXCLUDED.summary,
+         category = EXCLUDED.category,
+         flags    = EXCLUDED.flags,
+         type     = EXCLUDED.type,
+         brand    = CASE WHEN ideas.brand = 'Unassigned' THEN EXCLUDED.brand ELSE ideas.brand END,
+         needs_review = EXCLUDED.needs_review
+       WHERE ideas.needs_review AND NOT EXCLUDED.needs_review`,
       [uid("idea"), req.user.id, clean(it.title, 200) || raw.slice(0, 60),
        it.spoken_at || null, oneOf(it.type, TYPES, "Idea"),
        clean(it.brand, 60) || "Unassigned", cats(it.category),
