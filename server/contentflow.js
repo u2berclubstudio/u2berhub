@@ -8,7 +8,7 @@ import { auth } from "./auth.js";
 const uid = (p) => p + "_" + Math.random().toString(36).slice(2, 9);
 const clean = (v, max = 400) => String(v ?? "").trim().slice(0, max);
 
-async function loadProjects(userId) {
+export async function loadProjects(userId) {
   const { rows } = await q(
     "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='projects'", [userId]);
   const v = rows[0]?.value;
@@ -53,7 +53,7 @@ async function loadProjects(userId) {
   }
   return projects;
 }
-async function saveProjects(userId, projects) {
+export async function saveProjects(userId, projects) {
   await q(
     `INSERT INTO tool_data (user_id,tool,key,value,updated_at) VALUES ($1,'contentflow','projects',$2,now())
      ON CONFLICT (user_id,tool,key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`,

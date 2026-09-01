@@ -11,6 +11,7 @@ import { hashPassword, verifyPassword, createSession, destroySession, auth, admi
 import { TOOLS } from "./tools.js";
 import contentflow from "./contentflow.js";
 import trends from "./trends.js";
+import ideas from "./ideas.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -144,6 +145,7 @@ app.post("/api/admin/invites", auth(true), adminOnly, async (req, res) => {
 });
 
 app.use("/api/contentflow", auth(true), requireTool("contentflow"), contentflow);
+app.use("/api/ideas", auth(true), requireTool("ideas"), ideas);
 app.use("/api/trends", trends);
 
 /* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */

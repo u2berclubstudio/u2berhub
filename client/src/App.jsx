@@ -5,6 +5,7 @@ import Hub from "./Hub.jsx";
 import Admin from "./Admin.jsx";
 import SavedReels from "./tools/SavedReels.jsx";
 import Trends from "./tools/Trends.jsx";
+import Ideas from "./tools/Ideas.jsx";
 
 export default function App() {
   const [me, setMe] = useState(undefined);      // undefined = loading
@@ -44,6 +45,7 @@ export default function App() {
   if (route === "/admin" && me.role === "admin") body = <Admin />;
   else if (route === "/tool/savedreels") body = <SavedReels me={me} />;
   else if (route === "/tool/trends") body = <Trends me={me} />;
+  else if (route === "/tool/ideas") body = <Ideas me={me} />;
   else body = <Hub me={me} go={go} />;
 
   return <><style>{CSS}</style><Bar />{body}</>;

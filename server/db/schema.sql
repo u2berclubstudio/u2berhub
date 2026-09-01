@@ -132,3 +132,29 @@ UPDATE trend_reels SET official = true
 ALTER TABLE trend_reels DROP CONSTRAINT IF EXISTS trend_reels_url_key_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_reels_owner_url ON trend_reels (added_by, url_key);
 CREATE INDEX IF NOT EXISTS idx_trend_reels_official ON trend_reels (official);
+
+-- ============ IDEAS: dictated ideas inbox (Wispr Flow -> JSON upload) ============
+-- Per-user, like every other tool. One row per captured thought.
+CREATE TABLE IF NOT EXISTS ideas (
+  id             TEXT PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title          TEXT NOT NULL DEFAULT '',
+  spoken_at      TIMESTAMPTZ,
+  type           TEXT NOT NULL DEFAULT 'Idea',       -- Idea | Task | Decision | Note
+  brand          TEXT NOT NULL DEFAULT 'Unassigned',
+  category       TEXT[] NOT NULL DEFAULT '{}',
+  status         TEXT NOT NULL DEFAULT 'Inbox',      -- Inbox | Shortlisted | Scripted | Shot | Published | Dropped
+  summary        TEXT NOT NULL DEFAULT '',
+  raw_dictation  TEXT NOT NULL DEFAULT '',           -- verbatim. the actual raw material.
+  needs_review   BOOLEAN NOT NULL DEFAULT false,     -- no spoken header, brand/category guessed
+  flags          TEXT NOT NULL DEFAULT '',           -- duplicate / contradiction / open question
+  source         TEXT NOT NULL DEFAULT 'Dictation',  -- Dictation | Scratchpad | Meeting | Manual
+  app            TEXT NOT NULL DEFAULT '',           -- which app it was dictated into
+  project_id     TEXT,                               -- set once promoted into ContentFlow
+  dedupe_key     TEXT,                               -- Wispr transcriptEntityId — re-upload safe
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ideas_user        ON ideas(user_id, spoken_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ideas_user_status ON ideas(user_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ideas_dedupe
+  ON ideas(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
