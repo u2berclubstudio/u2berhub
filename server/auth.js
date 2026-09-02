@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { q } from "./db/index.js";
+import { TOOLS } from "./tools.js";
 
 /* scrypt password hashing — no external dependency */
 export function hashPassword(pw) {
@@ -57,9 +58,14 @@ export function allowedTools(user) {
   const list = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
   return list.length ? list : null; // null = all
 }
+/* Tools flagged optIn are excluded from the default-everything grant, so a new
+   personal tool doesn't appear on every creator's hub the moment it ships. */
+const OPT_IN_TOOLS = new Set(TOOLS.filter((t) => t.optIn).map((t) => t.id));
 export function canUseTool(user, toolId) {
+  if (user && user.role === "admin") return true;      // admins always have everything
   const list = allowedTools(user);
-  return !list || list.includes(toolId);
+  if (!list) return !OPT_IN_TOOLS.has(toolId);         // NULL = all tools, minus opt-in ones
+  return list.includes(toolId);
 }
 /* Middleware: block a tool's API if this user isn't allowed it. */
 export function requireTool(toolId) {
