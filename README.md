@@ -186,3 +186,14 @@ Stages are now **Channel -> Idea -> Inspiration -> Script -> Shoot -> Edit -> Po
 - **Inspiration** — each reference carries "Why saved" chips (Hook, Story, Editing, Camera,
   Transition, Acting, Music, CTA, Concept).
 Old projects migrate automatically.
+
+
+## FEEDSORTER (admin-only)
+Scan any public Instagram profile and rank posts by viral score = post likes divided by the
+account median likes. A 3.0x post beat their own typical post threefold. Sort by score / views
+/ newest, filter to reels, export CSV.
+
+Admin-only: it calls Instagram public web API from this server, and this VPS also serves the
+hub and other sites. Enforced at the API (403 creators, 401 anonymous), flagged adminOnly so
+it can never be granted via the Admin pills. Throttled 15s between scans, 20/hour per user,
+500ms between feed pages.

@@ -12,6 +12,7 @@ import { TOOLS } from "./tools.js";
 import contentflow from "./contentflow.js";
 import trends from "./trends.js";
 import ideas from "./ideas.js";
+import feedsorter from "./feedsorter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -76,7 +77,7 @@ app.get("/api/auth/me", auth(false), (req, res) => {
 
 /* ---------------- TOOLS (catalog) ---------------- */
 app.get("/api/tools", auth(true), (req, res) => {
-  const visible = TOOLS.filter((t) => canUseTool(req.user, t.id));
+  const visible = TOOLS.filter((t) => (!t.adminOnly || req.user.role === "admin") && canUseTool(req.user, t.id));
   res.json({ tools: visible.map((t) => ({ id: t.id, name: t.name, tagline: t.tagline, status: t.status })) });
 });
 
@@ -146,6 +147,7 @@ app.post("/api/admin/invites", auth(true), adminOnly, async (req, res) => {
 
 app.use("/api/contentflow", auth(true), requireTool("contentflow"), contentflow);
 app.use("/api/ideas", auth(true), requireTool("ideas"), ideas);
+app.use("/api/feedsorter", feedsorter);   // router enforces adminOnly itself
 app.use("/api/trends", trends);
 
 /* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */

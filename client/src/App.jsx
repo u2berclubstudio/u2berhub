@@ -6,6 +6,7 @@ import Admin from "./Admin.jsx";
 import SavedReels from "./tools/SavedReels.jsx";
 import Trends from "./tools/Trends.jsx";
 import Ideas from "./tools/Ideas.jsx";
+import FeedSorter from "./tools/FeedSorter.jsx";
 
 export default function App() {
   const [me, setMe] = useState(undefined);      // undefined = loading
@@ -46,6 +47,7 @@ export default function App() {
   else if (route === "/tool/savedreels") body = <SavedReels me={me} />;
   else if (route === "/tool/trends") body = <Trends me={me} />;
   else if (route === "/tool/ideas") body = <Ideas me={me} />;
+  else if (route === "/tool/feedsorter" && me.role === "admin") body = <FeedSorter />;
   else body = <Hub me={me} go={go} />;
 
   return <><style>{CSS}</style><Bar />{body}</>;
