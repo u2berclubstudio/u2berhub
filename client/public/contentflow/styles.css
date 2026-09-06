@@ -213,6 +213,37 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 .pip-dot { width: 20px; height: 5px; border-radius: 3px; background: var(--border); }
 .pip-dot.done { background: var(--amber); }
 
+/* --- Idea table (categorized, sortable, custom columns) --- */
+.idea-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.idea-table th, .idea-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.idea-table th { background: var(--cream); color: var(--ink-soft); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.03em; white-space: nowrap; }
+.idea-table th.sortable { cursor: pointer; user-select: none; }
+.idea-table th.sortable:hover { color: var(--amber-dark); }
+.idea-table tr:hover td { background: #FFFBF3; }
+.idea-table-text { max-width: 360px; cursor: pointer; }
+.idea-table .cell-input {
+  width: 100%; border: 1px solid transparent; background: transparent; font-family: inherit; font-size: 13px;
+  padding: 4px 6px; border-radius: 6px; color: var(--ink);
+}
+.idea-table .cell-input:hover { border-color: var(--border); }
+.idea-table .cell-input:focus { outline: none; border-color: var(--amber); background: #fff; }
+.col-remove { margin-left: 6px; cursor: pointer; color: var(--ink-soft); font-weight: 400; text-transform: none; }
+.col-remove:hover { color: #C0392B; }
+
+/* --- Sticky note (idea detail modal) --- */
+.sticky-note {
+  background: #FFF6C9; border: 1px solid #EBDD8E; border-radius: 6px; padding: 22px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.18); transform: rotate(-0.6deg); width: 420px; max-width: 90vw;
+}
+.sticky-note.modal-wide { width: 480px; }
+.sticky-note-date { font-size: 11px; color: #8a7a3a; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px; }
+.sticky-note-category { margin-bottom: 10px; }
+.sticky-note-text {
+  width: 100%; background: transparent; border: none; resize: vertical; font-family: inherit;
+  font-size: 14.5px; color: #4a3f1a; line-height: 1.5; padding: 0; margin-bottom: 10px;
+}
+.sticky-note-text:focus { outline: none; }
+
 /* --- SAVEDREELS pull picker helpers --- */
 .input-sm { padding: 6px 9px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; font-family: inherit; }
 .input-sm:focus { outline: none; border-color: var(--amber); }

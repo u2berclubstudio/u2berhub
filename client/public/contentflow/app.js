@@ -14,6 +14,10 @@ const state = {
   role: "strategist",
   currentProjectId: null,
   activeTab: "inspiration",
+  ideaCategories: [],
+  ideaSortField: "date",
+  ideaSortDir: "desc",
+  ideaSelected: new Set(),
 };
 
 const app = document.getElementById("app");
@@ -1115,32 +1119,99 @@ async function togglePillar(pid, pillarId) {
   await loadProjects(); render();
 }
 
-// ---------- Idea tab: one box, ideas stack below ----------
+// ---------- Idea tab: categorized, sortable table + custom columns ----------
+async function loadIdeaCategories() {
+  try { const r = await api("/idea-categories"); state.ideaCategories = r.categories || []; }
+  catch { state.ideaCategories = []; }
+}
+function categoryName(id) {
+  const c = state.ideaCategories.find((x) => x.id === id);
+  return c ? c.name : "";
+}
+function sortedIdeas(project) {
+  const ideas = [...(project.ideas || [])];
+  const field = state.ideaSortField, dir = state.ideaSortDir === "asc" ? 1 : -1;
+  ideas.sort((a, b) => {
+    if (field === "category") return categoryName(a.categoryId).localeCompare(categoryName(b.categoryId)) * dir;
+    // default: date (createdAt)
+    return (new Date(a.createdAt) - new Date(b.createdAt)) * dir;
+  });
+  return ideas;
+}
+function sortArrow(field) {
+  if (state.ideaSortField !== field) return "";
+  return state.ideaSortDir === "asc" ? " ▲" : " ▼";
+}
+function toggleIdeaSort(field) {
+  if (state.ideaSortField === field) state.ideaSortDir = state.ideaSortDir === "asc" ? "desc" : "asc";
+  else { state.ideaSortField = field; state.ideaSortDir = "desc"; }
+  render();
+}
+
 function renderIdea(project, editable) {
-  const ideas = project.ideas || [];
+  const ideas = sortedIdeas(project);
+  const customColumns = project.ideaColumns || [];
+  const categoryOptions = state.ideaCategories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+
+  const customTh = customColumns.map((col) => `
+    <th>${escapeHtml(col.name)}${editable ? `<span class="col-remove" onclick="event.stopPropagation();removeIdeaColumn('${project.id}','${col.id}')" title="Remove column">×</span>` : ""}</th>`).join("");
+
+  const rows = ideas.map((i) => {
+    const checked = state.ideaSelected.has(i.id) ? "checked" : "";
+    const dateStr = new Date(i.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    const customTds = customColumns.map((col) => `
+      <td onclick="event.stopPropagation()">
+        ${editable
+          ? `<input type="text" class="cell-input" value="${escapeAttr((i.customValues || {})[col.id] || "")}" onblur="updateIdeaCustomValue('${project.id}','${i.id}','${col.id}', this.value)">`
+          : escapeHtml((i.customValues || {})[col.id] || "")}
+      </td>`).join("");
+    return `<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleIdeaSelected('${i.id}', this.checked)"></td>
+      <td onclick="openIdeaNote('${project.id}','${i.id}')">${dateStr}</td>
+      <td onclick="openIdeaNote('${project.id}','${i.id}')">${i.categoryId ? `<span class="tag">${escapeHtml(categoryName(i.categoryId))}</span>` : '<span class="empty-state" style="padding:0;">—</span>'}</td>
+      <td class="idea-table-text" onclick="openIdeaNote('${project.id}','${i.id}')">${escapeHtml(i.text.slice(0, 90))}${i.text.length > 90 ? "…" : ""}</td>
+      ${customTds}
+    </tr>`;
+  }).join("");
+
   return `
+    ${editable ? `
     <div class="section">
       <div class="section-title">Raw idea</div>
       <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Dump the thought as it comes. Nothing gets overwritten — every idea stays in the list below.</p>
-      ${editable ? `
-        <textarea id="idea-box" rows="3" placeholder="What if the shopkeeper argued with the delivery guy about..."></textarea>
-        <button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="addIdea('${project.id}')">+ Add idea</button>
-      ` : ""}
-    </div>
+      <textarea id="idea-box" rows="3" placeholder="What if the shopkeeper argued with the delivery guy about..."></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">
+        <select id="idea-category" class="input-sm">
+          <option value="">— no category —</option>
+          ${categoryOptions}
+        </select>
+        <button class="btn btn-sm" onclick="promptNewIdeaCategory()">+ New category</button>
+        <button class="btn btn-primary btn-sm" onclick="addIdea('${project.id}')">+ Add idea</button>
+      </div>
+    </div>` : ""}
 
     <div class="section">
-      <div class="section-title">Ideas recorded <span class="chip">${ideas.length}</span></div>
-      ${ideas.length ? ideas.map((i) => `
-        <div class="idea-row" id="idea-${i.id}">
-          <div class="idea-text">${escapeHtml(i.text)}</div>
-          <div class="idea-meta">
-            ${new Date(i.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
-            ${editable ? `
-              <button class="link-btn-sm" onclick="editIdea('${project.id}','${i.id}')">edit</button>
-              <button class="link-btn-sm danger" onclick="deleteIdea('${project.id}','${i.id}')">delete</button>` : ""}
-          </div>
-        </div>`).join("")
-        : '<div class="empty-state">Nothing captured yet.</div>'}
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Ideas recorded <span class="chip">${ideas.length}</span></span>
+        <div style="display:flex;gap:8px;">
+          ${editable ? `<button class="btn btn-sm" onclick="addIdeaColumn('${project.id}')">+ Add column</button>` : ""}
+          <button class="btn btn-sm" onclick="exportIdeas('${project.id}', false)">Export all CSV</button>
+          <button class="btn btn-sm" onclick="exportIdeas('${project.id}', true)">Export selected CSV</button>
+        </div>
+      </div>
+      ${ideas.length ? `
+      <table class="idea-table">
+        <thead>
+          <tr>
+            <th style="width:28px;"><input type="checkbox" onchange="toggleAllIdeaSelected('${project.id}', this.checked)"></th>
+            <th class="sortable" onclick="toggleIdeaSort('date')">Date${sortArrow("date")}</th>
+            <th class="sortable" onclick="toggleIdeaSort('category')">Category${sortArrow("category")}</th>
+            <th>Idea</th>
+            ${customTh}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>` : '<div class="empty-state">Nothing captured yet.</div>'}
     </div>`;
 }
 
@@ -1148,21 +1219,125 @@ async function addIdea(pid) {
   const el = document.getElementById("idea-box");
   const text = (el.value || "").trim();
   if (!text) return;
-  await api(`/projects/${pid}/ideas`, { method: "POST", body: JSON.stringify({ text }) });
+  const categoryId = document.getElementById("idea-category").value;
+  await api(`/projects/${pid}/ideas`, { method: "POST", body: JSON.stringify({ text, categoryId }) });
   el.value = "";
   await loadProjects(); render();
 }
-async function editIdea(pid, ideaId) {
-  const project = getProject(pid);
-  const idea = (project.ideas || []).find((i) => i.id === ideaId);
-  const text = prompt("Edit idea:", idea ? idea.text : "");
-  if (text == null) return;
-  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ text }) });
+
+async function promptNewIdeaCategory() {
+  const name = prompt("New idea category (e.g. Observation, Trend, Personal experience):");
+  if (!name || !name.trim()) return;
+  await api("/idea-categories", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  await loadIdeaCategories(); render();
+}
+
+async function updateIdeaCategory(pid, ideaId, categoryId) {
+  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ categoryId }) });
   await loadProjects(); render();
 }
+
+function toggleIdeaSelected(id, checked) {
+  if (checked) state.ideaSelected.add(id); else state.ideaSelected.delete(id);
+}
+function toggleAllIdeaSelected(pid, checked) {
+  const project = getProject(pid);
+  const ideas = project.ideas || [];
+  if (checked) ideas.forEach((i) => state.ideaSelected.add(i.id));
+  else state.ideaSelected.clear();
+  render();
+}
+
+function openIdeaNote(pid, ideaId) {
+  const project = getProject(pid);
+  const idea = (project.ideas || []).find((i) => i.id === ideaId);
+  if (!idea) return;
+  const editable = canEdit("idea");
+  const customColumns = project.ideaColumns || [];
+  const dateStr = new Date(idea.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const categoryOptions = state.ideaCategories.map((c) => `<option value="${c.id}" ${c.id === idea.categoryId ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("");
+
+  const customFields = customColumns.map((col) => `
+    <div class="field">
+      <label class="field-label">${escapeHtml(col.name)}</label>
+      <textarea rows="2" ${editable ? `onblur="updateIdeaCustomValue('${pid}','${ideaId}','${col.id}', this.value)"` : "disabled"}>${escapeHtml((idea.customValues || {})[col.id] || "")}</textarea>
+    </div>`).join("");
+
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="sticky-note modal-wide">
+        <div class="sticky-note-date">${dateStr}</div>
+        ${editable ? `
+          <select class="input-sm sticky-note-category" onchange="updateIdeaCategory('${pid}','${ideaId}', this.value)">
+            <option value="">— no category —</option>
+            ${categoryOptions}
+          </select>` : idea.categoryId ? `<div class="sticky-note-category"><span class="tag">${escapeHtml(categoryName(idea.categoryId))}</span></div>` : ""}
+        <textarea class="sticky-note-text" rows="6" ${editable ? "" : "disabled"} onblur="updateIdeaText('${pid}','${ideaId}', this.value)">${escapeHtml(idea.text)}</textarea>
+        ${customFields}
+        <div class="modal-actions" style="margin-top:12px;">
+          ${editable ? `<button class="btn" style="color:var(--red, #C0392B);border-color:var(--red, #C0392B);" onclick="deleteIdea('${pid}','${ideaId}')">Delete</button>` : ""}
+          <button class="btn btn-primary" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function updateIdeaText(pid, ideaId, text) {
+  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ text }) });
+  await loadProjects();
+}
+
+async function updateIdeaCustomValue(pid, ideaId, columnId, value) {
+  await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ customValues: { [columnId]: value } }) });
+  await loadProjects();
+}
+
+async function addIdeaColumn(pid) {
+  const name = prompt("New column name (e.g. Brief, Owner):");
+  if (!name || !name.trim()) return;
+  await api(`/projects/${pid}/idea-columns`, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  await loadProjects(); render();
+}
+async function removeIdeaColumn(pid, columnId) {
+  if (!confirm("Remove this column? Its values on every idea will be lost.")) return;
+  await api(`/projects/${pid}/idea-columns/${columnId}`, { method: "DELETE" });
+  await loadProjects(); render();
+}
+
+function csvEscape(v) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function exportIdeas(pid, selectedOnly) {
+  const project = getProject(pid);
+  let ideas = sortedIdeas(project);
+  if (selectedOnly) ideas = ideas.filter((i) => state.ideaSelected.has(i.id));
+  if (!ideas.length) { alert(selectedOnly ? "No ideas selected." : "No ideas to export."); return; }
+  const customColumns = project.ideaColumns || [];
+  const header = ["Date", "Category", "Idea", ...customColumns.map((c) => c.name)];
+  const lines = [header.map(csvEscape).join(",")];
+  ideas.forEach((i) => {
+    const row = [
+      new Date(i.createdAt).toLocaleDateString("en-IN"),
+      categoryName(i.categoryId),
+      i.text,
+      ...customColumns.map((c) => (i.customValues || {})[c.id] || ""),
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${(project.title || "ideas").replace(/[^a-z0-9]+/gi, "_")}_ideas.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function deleteIdea(pid, ideaId) {
   if (!confirm("Delete this idea?")) return;
   await api(`/projects/${pid}/ideas/${ideaId}`, { method: "DELETE" });
+  state.ideaSelected.delete(ideaId);
+  closeModal();
   await loadProjects(); render();
 }
 
@@ -1641,7 +1816,6 @@ function escapeAttr(str) { return escapeHtml(str); }
 
 // ---------- Boot ----------
 (async function init() {
-  await loadChannels();
-  await loadProjects();
+  await Promise.all([loadChannels(), loadProjects(), loadIdeaCategories()]);
   render();
 })();

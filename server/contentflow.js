@@ -31,6 +31,12 @@ export async function loadProjects(userId) {
       const raw = p.idea && p.idea.rawIdea ? String(p.idea.rawIdea).trim() : "";
       if (raw) p.ideas.push({ id: uid("idea"), text: raw, createdAt: p.createdAt || new Date().toISOString() });
     }
+    // idea categories + custom columns (spreadsheet-style extras on the Idea table)
+    if (!Array.isArray(p.ideaColumns)) p.ideaColumns = [];
+    p.ideas.forEach((idea) => {
+      if (!("categoryId" in idea)) idea.categoryId = "";
+      if (!idea.customValues || typeof idea.customValues !== "object") idea.customValues = {};
+    });
 
     // scripts: a project now holds many. The old single script becomes "Script 1".
     if (!Array.isArray(p.scripts)) {
@@ -375,7 +381,10 @@ router.patch("/projects/:id/inspirations/:inspId/reasons", (req, res) => withPro
 router.post("/projects/:id/ideas", (req, res) => withProject(req, res, (project) => {
   const text = clean(req.body.text, 4000);
   if (!text) throw Object.assign(new Error("Empty idea"), { code: 400 });
-  const idea = { id: uid("idea"), text, createdAt: new Date().toISOString() };
+  const idea = {
+    id: uid("idea"), text, createdAt: new Date().toISOString(),
+    categoryId: clean(req.body.categoryId, 60), customValues: {},
+  };
   project.ideas = project.ideas || [];
   project.ideas.unshift(idea);   // newest first
   return idea;
@@ -385,11 +394,63 @@ router.patch("/projects/:id/ideas/:ideaId", (req, res) => withProject(req, res, 
   const idea = (project.ideas || []).find((i) => i.id === req.params.ideaId);
   if (!idea) throw Object.assign(new Error("Not found"), { code: 404 });
   if ("text" in req.body) idea.text = clean(req.body.text, 4000);
+  if ("categoryId" in req.body) idea.categoryId = clean(req.body.categoryId, 60);
+  // deep-merge so setting one custom column's value never wipes another's
+  if (req.body.customValues && typeof req.body.customValues === "object") {
+    idea.customValues = { ...(idea.customValues || {}), ...req.body.customValues };
+  }
   return idea;
 }));
 
 router.delete("/projects/:id/ideas/:ideaId", (req, res) => withProject(req, res, (project) => {
   project.ideas = (project.ideas || []).filter((i) => i.id !== req.params.ideaId);
+  return { ok: true };
+}));
+
+/* Idea categories — per-user, reused across every project (like channels/pillars). */
+async function loadIdeaCategories(userId) {
+  const { rows } = await q(
+    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='ideaCategories'", [userId]);
+  const v = rows[0]?.value;
+  return Array.isArray(v?.categories) ? v.categories : [];
+}
+async function saveIdeaCategories(userId, categories) {
+  await q(
+    `INSERT INTO tool_data (user_id,tool,key,value,updated_at) VALUES ($1,'contentflow','ideaCategories',$2,now())
+     ON CONFLICT (user_id,tool,key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`,
+    [userId, { categories }]);
+}
+router.get("/idea-categories", async (req, res) => {
+  res.json({ categories: await loadIdeaCategories(req.user.id) });
+});
+router.post("/idea-categories", async (req, res) => {
+  const name = clean(req.body.name, 60);
+  if (!name) return res.status(400).json({ error: "Give the category a name." });
+  const categories = await loadIdeaCategories(req.user.id);
+  const dup = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (dup) return res.json({ category: dup, duplicate: true });
+  const category = { id: uid("icat"), name };
+  categories.push(category);
+  await saveIdeaCategories(req.user.id, categories);
+  res.json({ category });
+});
+
+/* Idea table custom columns — scoped to one project, spreadsheet-style extra fields. */
+router.post("/projects/:id/idea-columns", async (req, res) => {
+  const name = clean(req.body.name, 60);
+  if (!name) return res.status(400).json({ error: "Give the column a name." });
+  return withProject(req, res, (project) => {
+    project.ideaColumns = project.ideaColumns || [];
+    const column = { id: uid("col"), name };
+    project.ideaColumns.push(column);
+    return column;
+  });
+});
+router.delete("/projects/:id/idea-columns/:columnId", (req, res) => withProject(req, res, (project) => {
+  project.ideaColumns = (project.ideaColumns || []).filter((c) => c.id !== req.params.columnId);
+  (project.ideas || []).forEach((idea) => {
+    if (idea.customValues) delete idea.customValues[req.params.columnId];
+  });
   return { ok: true };
 }));
 
