@@ -131,6 +131,7 @@ function renderDetail(project) {
           ${STAGES.map((s) => `<option value="${s}" ${project.stage === s ? "selected" : ""}>${STAGE_LABELS[s]}</option>`).join("")}
           <option value="done" ${project.stage === "done" ? "selected" : ""}>Done</option>
         </select>
+        <a class="btn btn-sm" href="/api/contentflow/projects/${project.id}/pdf" target="_blank" rel="noopener">⬇ Export PDF</a>
         <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="confirmDeleteProject('${project.id}')">🗑 Delete</button>
       </div>
     </div>
@@ -1446,6 +1447,14 @@ function renderScript(project, editable) {
       </div>
     </div>
 
+    <div class="section">
+      <div class="section-title">Full script</div>
+      <p class="muted" style="font-size:12.5px;margin:-4px 0 12px;">Paste the whole script here as one block — handy when you've written it elsewhere and just want it on record for reference.</p>
+      ${editable
+        ? `<textarea rows="10" placeholder="Paste the complete script here..." onblur="saveFullScript('${project.id}','${sc.id}', this.value)">${escapeHtml(sc.fullText || "")}</textarea>`
+        : (sc.fullText ? `<div style="white-space:pre-wrap;font-size:13.5px;line-height:1.6;">${escapeHtml(sc.fullText)}</div>` : '<div class="empty-state">No full script pasted yet.</div>')}
+    </div>
+
     ${renderShotRefPanel(project, editable)}
 
     <div class="section">
@@ -1536,6 +1545,10 @@ async function duplicateScript(pid, sid) {
   const copy = await api(`/projects/${pid}/scripts/${sid}/duplicate`, { method: "POST" });
   state.openScriptId = copy.id;
   await loadProjects(); render();
+}
+async function saveFullScript(pid, sid, text) {
+  await api(`/projects/${pid}/scripts/${sid}`, { method: "PATCH", body: JSON.stringify({ fullText: text }) });
+  await loadProjects();
 }
 async function deleteScript(pid, sid) {
   if (!confirm("Delete this draft? Its shots and hooks go with it. Other drafts stay.")) return;

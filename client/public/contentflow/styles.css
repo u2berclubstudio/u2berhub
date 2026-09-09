@@ -69,6 +69,7 @@ select {
   cursor: pointer;
 }
 .btn:hover { border-color: var(--amber); }
+a.btn { text-decoration: none; display: inline-block; }
 .btn-primary { background: var(--amber); border-color: var(--amber); color: white; }
 .btn-primary:hover { background: var(--amber-dark); }
 .btn-ghost { background: transparent; border: none; color: var(--ink-soft); }

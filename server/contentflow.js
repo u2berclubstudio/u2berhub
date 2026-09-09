@@ -2,6 +2,7 @@
 // Each user's whole projects array lives in tool_data (tool='contentflow', key='projects').
 // Every route below loads THIS user's projects, mutates, saves — full isolation.
 import express from "express";
+import PDFDocument from "pdfkit";
 import { q } from "./db/index.js";
 import { auth } from "./auth.js";
 
@@ -50,6 +51,8 @@ export async function loadProjects(userId) {
         });
       }
     }
+    // fullText: the whole script pasted as one block, alongside the structured hooks/blocks.
+    p.scripts.forEach((sc) => { if (!("fullText" in sc)) sc.fullText = ""; });
     // shoot points at whichever script is being filmed
     if (!p.shoot) p.shoot = { date: "", location: "", generalNotes: "", shots: [] };
     if (!("scriptId" in p.shoot)) p.shoot.scriptId = p.scripts.length ? p.scripts[0].id : "";
@@ -472,6 +475,7 @@ router.patch("/projects/:id/scripts/:scriptId", (req, res) => withProject(req, r
   const sc = (project.scripts || []).find((x) => x.id === req.params.scriptId);
   if (!sc) throw Object.assign(new Error("Not found"), { code: 404 });
   if ("title" in req.body) sc.title = clean(req.body.title, 120) || sc.title;
+  if ("fullText" in req.body) sc.fullText = clean(req.body.fullText, 50000);
   return sc;
 }));
 
@@ -572,5 +576,177 @@ router.patch("/projects/:id/shoot-script", (req, res) => withProject(req, res, (
   }
   return project.shoot;
 }));
+
+/* ================= PDF export: the whole project, execution-ready ================= */
+const AMBER = "#C96A18";
+const INK = "#2B2320";
+const SOFT = "#6B5F55";
+
+function pdfSectionTitle(doc, text) {
+  if (doc.y > doc.page.height - doc.page.margins.bottom - 60) doc.addPage();
+  doc.moveDown(0.8);
+  doc.fontSize(13).fillColor(AMBER).font("Helvetica-Bold").text(text.toUpperCase(), { characterSpacing: 0.5 });
+  doc.moveTo(doc.x, doc.y + 2).lineTo(doc.page.width - doc.page.margins.right, doc.y + 2).strokeColor("#EAE1D3").stroke();
+  doc.moveDown(0.5);
+  doc.fillColor(INK).font("Helvetica");
+}
+function pdfLabel(doc, label, value) {
+  if (!value) return;
+  doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text(label.toUpperCase() + "  ", { continued: true });
+  doc.fontSize(10.5).fillColor(INK).font("Helvetica").text(String(value));
+}
+function pdfBody(doc, text) {
+  doc.fontSize(10.5).fillColor(INK).font("Helvetica").text(text, { align: "left" });
+}
+
+function buildProjectPDF(doc, project, channels) {
+  const channel = channels.find((c) => c.id === project.channelId);
+  const pillarNames = channel ? (channel.pillars || []).filter((p) => (project.pillarIds || []).includes(p.id)).map((p) => p.name) : [];
+
+  // Header
+  doc.fontSize(9).fillColor(AMBER).font("Helvetica-Bold").text((project.brand || "").toUpperCase());
+  doc.fontSize(20).fillColor(INK).font("Helvetica-Bold").text(project.title || "Untitled");
+  doc.fontSize(10).fillColor(SOFT).font("Helvetica")
+    .text(`Stage: ${project.stage || ""}   ·   Created: ${project.createdAt ? new Date(project.createdAt).toLocaleDateString("en-IN") : ""}`);
+  if (channel || pillarNames.length) {
+    doc.moveDown(0.2);
+    doc.fontSize(10).fillColor(SOFT).text(`Channel: ${channel ? channel.name : "—"}   ·   Pillars: ${pillarNames.length ? pillarNames.join(", ") : "—"}`);
+  }
+
+  // Idea
+  pdfSectionTitle(doc, "Idea");
+  const ideas = project.ideas || [];
+  if (!ideas.length) pdfBody(doc, "No ideas recorded.");
+  ideas.forEach((i, idx) => {
+    if (idx > 0) doc.moveDown(0.4);
+    doc.fontSize(9).fillColor(SOFT).text(new Date(i.createdAt).toLocaleDateString("en-IN"));
+    pdfBody(doc, i.text);
+    Object.entries(i.customValues || {}).forEach(([colId, val]) => {
+      if (!val) return;
+      const col = (project.ideaColumns || []).find((c) => c.id === colId);
+      if (col) pdfLabel(doc, col.name, val);
+    });
+  });
+
+  // Inspiration
+  pdfSectionTitle(doc, "Inspiration");
+  const insps = project.inspirations || [];
+  if (!insps.length) pdfBody(doc, "No inspiration references saved.");
+  insps.forEach((i, idx) => {
+    if (idx > 0) doc.moveDown(0.4);
+    pdfLabel(doc, "URL", i.url);
+    if (i.reasons && i.reasons.length) pdfLabel(doc, "Why saved", i.reasons.join(", "));
+    if (i.note) pdfBody(doc, i.note);
+  });
+
+  // Scripts (every draft; the one linked to Shoot is marked)
+  pdfSectionTitle(doc, "Script");
+  const scripts = project.scripts || [];
+  if (!scripts.length) pdfBody(doc, "No script drafts yet.");
+  scripts.forEach((sc, idx) => {
+    if (idx > 0) doc.moveDown(0.8);
+    const inProduction = project.shoot && project.shoot.scriptId === sc.id;
+    doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text(sc.title + (inProduction ? "  (in production)" : ""));
+    doc.moveDown(0.3);
+
+    if (sc.fullText && sc.fullText.trim()) {
+      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("FULL SCRIPT");
+      doc.moveDown(0.15);
+      pdfBody(doc, sc.fullText);
+      doc.moveDown(0.4);
+    }
+
+    if ((sc.hooks || []).length) {
+      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("HOOK OPTIONS");
+      doc.moveDown(0.15);
+      sc.hooks.forEach((h) => {
+        pdfLabel(doc, `Version ${h.version}${h.selected ? " — selected" : ""}`, h.text);
+        if (h.notes) doc.fontSize(9).fillColor(SOFT).font("Helvetica-Oblique").text(h.notes);
+        doc.moveDown(0.25);
+      });
+    }
+
+    if ((sc.blocks || []).length) {
+      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("SHOT-BY-SHOT");
+      doc.moveDown(0.15);
+      sc.blocks.forEach((b) => {
+        const tags = [b.shotType, b.angle, b.movement, b.location].filter(Boolean).join("  ·  ");
+        doc.fontSize(10.5).fillColor(INK).font("Helvetica-Bold").text(`${b.order}. `, { continued: true }).font("Helvetica").text(b.dialogue || "");
+        if (tags) doc.fontSize(9).fillColor(SOFT).text(tags);
+        if (b.props) doc.fontSize(9).fillColor(SOFT).text("Props/notes: " + b.props);
+        if (b.onScreenText) doc.fontSize(9).fillColor(SOFT).text("On-screen text: " + b.onScreenText);
+        doc.moveDown(0.3);
+      });
+    }
+  });
+
+  // Shoot
+  pdfSectionTitle(doc, "Shoot");
+  const shoot = project.shoot || {};
+  pdfLabel(doc, "Date", shoot.date);
+  pdfLabel(doc, "Location", shoot.location);
+  if (shoot.generalNotes) pdfBody(doc, shoot.generalNotes);
+  const shootSc = scripts.find((s) => s.id === shoot.scriptId);
+  const shots = (shoot.shots || []).filter((s) => !shoot.scriptId || s.scriptId === shoot.scriptId);
+  if (shootSc && shots.length) {
+    doc.moveDown(0.3);
+    shots.forEach((sh) => {
+      const b = (shootSc.blocks || []).find((x) => x.id === sh.blockId);
+      doc.fontSize(10).fillColor(INK).font("Helvetica-Bold")
+        .text(`Shot ${b ? b.order : "?"} — ${(sh.status || "pending").toUpperCase()}`);
+      if (sh.takeNotes) doc.fontSize(9.5).fillColor(SOFT).font("Helvetica").text(sh.takeNotes);
+      doc.moveDown(0.2);
+    });
+  }
+
+  // Edit (only if something's filled in)
+  const edit = project.edit || {};
+  const hasEdit = edit.footageLink || edit.musicNotes || edit.pacingNotes || (edit.checklist || []).length;
+  if (hasEdit) {
+    pdfSectionTitle(doc, "Edit");
+    pdfLabel(doc, "Footage link", edit.footageLink);
+    if (edit.musicNotes) pdfLabel(doc, "Music notes", edit.musicNotes);
+    if (edit.pacingNotes) pdfLabel(doc, "Pacing notes", edit.pacingNotes);
+    if ((edit.checklist || []).length) {
+      doc.moveDown(0.3);
+      edit.checklist.forEach((c) => {
+        doc.fontSize(10).fillColor(c.done ? SOFT : INK).text(`${c.done ? "[x]" : "[ ]"} ${c.item}`);
+      });
+    }
+  }
+
+  // Post (only if something's filled in)
+  const post = project.post || {};
+  const hasPost = ["url", "views", "watchTime", "retention", "saves", "shares", "comments", "notes"].some((k) => post[k]);
+  if (hasPost) {
+    pdfSectionTitle(doc, "Post");
+    pdfLabel(doc, "URL", post.url);
+    pdfLabel(doc, "Views", post.views);
+    pdfLabel(doc, "Watch time", post.watchTime);
+    pdfLabel(doc, "Retention", post.retention);
+    pdfLabel(doc, "Saves", post.saves);
+    pdfLabel(doc, "Shares", post.shares);
+    pdfLabel(doc, "Comments", post.comments);
+    if (post.notes) pdfBody(doc, post.notes);
+  }
+}
+
+router.get("/projects/:id/pdf", async (req, res) => {
+  const projects = await loadProjects(req.user.id);
+  const project = projects.find((p) => p.id === req.params.id);
+  if (!project) return res.status(404).json({ error: "Not found" });
+  const { rows } = await q(
+    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='channels'", [req.user.id]);
+  const channels = Array.isArray(rows[0]?.value?.channels) ? rows[0].value.channels : [];
+
+  const filename = (project.title || "project").replace(/[^a-z0-9]+/gi, "_").slice(0, 60) + ".pdf";
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+  const doc = new PDFDocument({ margin: 50, size: "A4", bufferPages: true });
+  doc.pipe(res);
+  buildProjectPDF(doc, project, channels);
+  doc.end();
+});
 
 export default router;
