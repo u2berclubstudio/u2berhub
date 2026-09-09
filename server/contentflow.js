@@ -598,6 +598,17 @@ const GREEN_BG = "#E8F5E9";
 const RED = "#C0392B";
 const RED_BG = "#FDECEA";
 
+// Mirrors TAG_COLORS in the client's mood canvas (client/public/contentflow/app.js).
+const CANVAS_TAGS = [
+  { id: "hook", label: "Hook", color: "#E8852B" },
+  { id: "broll", label: "B-roll", color: "#2D7384" },
+  { id: "talk", label: "Talking", color: "#7A4FA3" },
+  { id: "text", label: "Text/GFX", color: "#3F8F5B" },
+  { id: "trans", label: "Transition", color: "#C24A5B" },
+  { id: "end", label: "CTA/End", color: "#D9A226" },
+];
+const canvasTag = (id) => CANVAS_TAGS.find((t) => t.id === id);
+
 function registerContentFlowFonts(doc) {
   doc.registerFont(FONT_REG, path.join(FONTS_DIR, "NotoSansDevanagari-Regular.ttf"));
   doc.registerFont(FONT_BOLD, path.join(FONTS_DIR, "NotoSansDevanagari-Bold.ttf"));
@@ -696,7 +707,77 @@ function pdfChecklistRow(doc, item) {
   doc.y = Math.max(doc.y, y + 15) + 4;
 }
 
-function buildProjectPDF(doc, project, channels, ideaCategories) {
+// One mood-canvas frame: thumbnail on the left (if it has an image), tag/time/shot
+// metadata and the note on the right. imgBuf is the raw image Buffer (or null).
+function pdfMoodFrame(doc, frame, imgBuf) {
+  const boxX = doc.page.margins.left;
+  const boxW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const pad = 10;
+  const showImgBox = frame.type !== "text";
+  const imgW = showImgBox ? 120 : 0;
+  const textX = boxX + pad + (showImgBox ? imgW + pad : 0);
+  const textW = boxW - pad * 2 - (showImgBox ? imgW + pad : 0);
+
+  doc.font(FONT_REG).fontSize(10);
+  const noteH = frame.note ? doc.heightOfString(frame.note, { width: textW }) : 0;
+  const metaStr = [frame.angle, frame.move].filter(Boolean).join(" · ");
+  let textH = 14; // meta/tag line always reserved
+  if (frame.shotType) textH += 15;
+  if (metaStr) textH += 12;
+  if (noteH) textH += noteH + 6;
+  const blockH = Math.max(showImgBox ? 90 : 0, textH) + pad * 2;
+
+  pdfPageBreakIfNeeded(doc, blockH + 10);
+  const boxY = doc.y;
+  const tag = frame.tag ? canvasTag(frame.tag) : null;
+  doc.roundedRect(boxX, boxY, boxW, blockH, 6).fillAndStroke("#FAF6EC", BORDER);
+  if (tag) doc.rect(boxX, boxY, 4, blockH).fill(tag.color);
+
+  if (showImgBox) {
+    const imgH = blockH - pad * 2;
+    let drew = false;
+    if (imgBuf) {
+      try {
+        doc.image(imgBuf, boxX + pad, boxY + pad, { fit: [imgW, imgH], align: "center", valign: "center" });
+        drew = true;
+      } catch (e) { /* unsupported format (e.g. webp/heic) — fall through to placeholder */ }
+    }
+    if (!drew) {
+      doc.roundedRect(boxX + pad, boxY + pad, imgW, imgH, 4).lineWidth(1).stroke(BORDER);
+      doc.fontSize(8).fillColor(SOFT).font(FONT_REG)
+        .text(imgBuf ? "Image unavailable" : "No image", boxX + pad + 4, boxY + pad + imgH / 2 - 4,
+          { width: imgW - 8, align: "center" });
+    }
+  }
+
+  let ty = boxY + pad;
+  const metaParts = [];
+  if (frame.time) metaParts.push(frame.time);
+  if (tag) metaParts.push(tag.label);
+  if (metaParts.length) {
+    doc.fontSize(8.5).fillColor(SOFT).font(FONT_BOLD)
+      .text(metaParts.join("   ·   ").toUpperCase(), textX, ty, { width: textW, lineBreak: false });
+    ty = doc.y + 3;
+  } else {
+    ty += 2;
+  }
+  if (frame.shotType) {
+    doc.fontSize(10.5).fillColor(INK).font(FONT_BOLD).text(frame.shotType, textX, ty, { width: textW });
+    ty = doc.y + 2;
+  }
+  if (metaStr) {
+    doc.fontSize(9).fillColor(SOFT).font(FONT_REG).text(metaStr, textX, ty, { width: textW });
+    ty = doc.y + 3;
+  }
+  if (frame.note) {
+    doc.fontSize(10).fillColor(INK).font(FONT_REG).text(frame.note, textX, ty, { width: textW });
+  }
+
+  doc.y = boxY + blockH + 8;
+  doc.x = boxX;
+}
+
+function buildProjectPDF(doc, project, channels, ideaCategories, canvasImages) {
   registerContentFlowFonts(doc);
   const channel = channels.find((c) => c.id === project.channelId);
   const pillarNames = channel ? (channel.pillars || []).filter((p) => (project.pillarIds || []).includes(p.id)).map((p) => p.name) : [];
@@ -741,6 +822,20 @@ function buildProjectPDF(doc, project, channels, ideaCategories) {
     if (i.reasons && i.reasons.length) { doc.moveDown(0.25); pdfChips(doc, i.reasons, { bg: GRAY_BG, fg: SOFT }); }
     pdfCardEnd(doc, start, AMBER_DARK);
   });
+
+  // Mood canvas — the free-drag board of captured frames, uploaded images, and notes.
+  const frames = (project.canvas && project.canvas.frames) || [];
+  if (frames.length) {
+    doc.moveDown(0.5);
+    doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text("MOOD CANVAS");
+    doc.moveDown(0.2);
+    // top-to-bottom, left-to-right — approximates how the board reads visually
+    const sorted = [...frames].sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
+    sorted.forEach((f) => {
+      const entry = f.imageId ? canvasImages.get(f.imageId) : null;
+      pdfMoodFrame(doc, f, entry ? entry.data : null);
+    });
+  }
 
   // Scripts (every draft; the one linked to Shoot is highlighted)
   pdfSectionTitle(doc, "Script");
@@ -906,13 +1001,19 @@ router.get("/projects/:id/pdf", async (req, res) => {
     "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='ideaCategories'", [req.user.id]);
   const ideaCategories = Array.isArray(catRows[0]?.value?.categories) ? catRows[0].value.categories : [];
 
+  // Mood-canvas images (and the Post-stage retention screenshot) live in canvas_images,
+  // keyed by id — pull every image belonging to this project so the PDF can embed them.
+  const { rows: imgRows } = await q(
+    "SELECT id, mime, data FROM canvas_images WHERE user_id=$1 AND project_id=$2", [req.user.id, project.id]);
+  const canvasImages = new Map(imgRows.map((r) => [r.id, r]));
+
   const filename = (project.title || "project").replace(/[^a-z0-9]+/gi, "_").slice(0, 60) + ".pdf";
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
   const doc = new PDFDocument({ margin: 50, size: "A4", bufferPages: true });
   doc.pipe(res);
-  buildProjectPDF(doc, project, channels, ideaCategories);
+  buildProjectPDF(doc, project, channels, ideaCategories, canvasImages);
   doc.end();
 });
 
