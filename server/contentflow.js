@@ -3,8 +3,12 @@
 // Every route below loads THIS user's projects, mutates, saves — full isolation.
 import express from "express";
 import PDFDocument from "pdfkit";
+import path from "path";
+import { fileURLToPath } from "url";
 import { q } from "./db/index.js";
 import { auth } from "./auth.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const uid = (p) => p + "_" + Math.random().toString(36).slice(2, 9);
 const clean = (v, max = 400) => String(v ?? "").trim().slice(0, max);
@@ -578,54 +582,151 @@ router.patch("/projects/:id/shoot-script", (req, res) => withProject(req, res, (
 }));
 
 /* ================= PDF export: the whole project, execution-ready ================= */
-const AMBER = "#C96A18";
+const FONTS_DIR = path.join(__dirname, "fonts");
+const FONT_REG = "body";
+const FONT_BOLD = "bold";
+
+const AMBER = "#E8852B";
+const AMBER_DARK = "#C96A18";
+const AMBER_LIGHT = "#FDF3E7";
 const INK = "#2B2320";
 const SOFT = "#6B5F55";
+const BORDER = "#EAE1D3";
+const GRAY_BG = "#F1ECE2";
+const GREEN = "#2E7D46";
+const GREEN_BG = "#E8F5E9";
+const RED = "#C0392B";
+const RED_BG = "#FDECEA";
+
+function registerContentFlowFonts(doc) {
+  doc.registerFont(FONT_REG, path.join(FONTS_DIR, "NotoSansDevanagari-Regular.ttf"));
+  doc.registerFont(FONT_BOLD, path.join(FONTS_DIR, "NotoSansDevanagari-Bold.ttf"));
+}
+
+function pdfPageBreakIfNeeded(doc, needed) {
+  if (doc.y + needed > doc.page.height - doc.page.margins.bottom) doc.addPage();
+}
 
 function pdfSectionTitle(doc, text) {
-  if (doc.y > doc.page.height - doc.page.margins.bottom - 60) doc.addPage();
-  doc.moveDown(0.8);
-  doc.fontSize(13).fillColor(AMBER).font("Helvetica-Bold").text(text.toUpperCase(), { characterSpacing: 0.5 });
-  doc.moveTo(doc.x, doc.y + 2).lineTo(doc.page.width - doc.page.margins.right, doc.y + 2).strokeColor("#EAE1D3").stroke();
-  doc.moveDown(0.5);
-  doc.fillColor(INK).font("Helvetica");
+  pdfPageBreakIfNeeded(doc, 60);
+  doc.moveDown(1);
+  const y = doc.y;
+  doc.rect(doc.page.margins.left, y + 2, 4, 13).fill(AMBER);
+  doc.fontSize(13).fillColor(AMBER_DARK).font(FONT_BOLD).text(text.toUpperCase(), doc.page.margins.left + 12, y, { characterSpacing: 0.6 });
+  doc.moveTo(doc.page.margins.left, doc.y + 4).lineTo(doc.page.width - doc.page.margins.right, doc.y + 4).lineWidth(1).strokeColor(BORDER).stroke();
+  doc.y = doc.y + 10;
+  doc.x = doc.page.margins.left;
+  doc.fillColor(INK).font(FONT_REG);
 }
 function pdfLabel(doc, label, value) {
   if (!value) return;
-  doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text(label.toUpperCase() + "  ", { continued: true });
-  doc.fontSize(10.5).fillColor(INK).font("Helvetica").text(String(value));
+  doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text(label.toUpperCase() + "  ", doc.x, doc.y, { continued: true });
+  doc.fontSize(10.5).fillColor(INK).font(FONT_REG).text(String(value));
 }
 function pdfBody(doc, text) {
-  doc.fontSize(10.5).fillColor(INK).font("Helvetica").text(text, { align: "left" });
+  doc.fontSize(10.5).fillColor(INK).font(FONT_REG).text(text, { align: "left" });
 }
 
-function buildProjectPDF(doc, project, channels) {
+// Wrapping "chip" tags — used for categories, why-saved reasons, shot tags, status.
+function pdfChips(doc, items, opts = {}) {
+  const clean = (items || []).filter(Boolean);
+  if (!clean.length) return;
+  const bg = opts.bg || AMBER_LIGHT, fg = opts.fg || AMBER_DARK;
+  const startX = opts.x != null ? opts.x : doc.page.margins.left;
+  const maxX = doc.page.width - doc.page.margins.right;
+  let x = startX, y = doc.y;
+  const padX = 7, h = 16, gap = 6;
+  clean.forEach((label) => {
+    doc.font(FONT_BOLD).fontSize(8.5);
+    const w = doc.widthOfString(label) + padX * 2;
+    if (x + w > maxX && x > startX) { x = startX; y += h + 5; }
+    doc.roundedRect(x, y, w, h, 8).fill(bg);
+    doc.fillColor(fg).text(label, x + padX, y + 4, { lineBreak: false, width: w - padX * 2 });
+    x += w + gap;
+  });
+  doc.x = startX;
+  doc.y = y + h + 6;
+  doc.font(FONT_REG).fillColor(INK);
+}
+
+// Left accent stripe around a block of content — the "highlighted card" look for entries.
+function pdfCardStart(doc) { return { x: doc.x, y: doc.y, pages: doc.bufferedPageRange().count }; }
+function pdfCardEnd(doc, start, color) {
+  if (doc.bufferedPageRange().count !== start.pages) return; // spanned a page break — skip the stripe
+  const y1 = doc.y;
+  if (y1 <= start.y) return;
+  doc.rect(doc.page.margins.left - 10, start.y - 2, 3, y1 - start.y + 4).fill(color);
+}
+
+function pdfHeaderBand(doc, project, channel, pillarNames) {
+  const contentW = doc.page.width - 100;
+  doc.font(FONT_BOLD).fontSize(21);
+  const titleH = doc.heightOfString(project.title || "Untitled", { width: contentW });
+  const brandY = 24, titleY = brandY + 15, metaY = titleY + titleH + 8, bandH = metaY + 17;
+
+  doc.rect(0, 0, doc.page.width, bandH).fill(AMBER);
+  doc.fillColor("#FFF3E0").font(FONT_BOLD).fontSize(9)
+    .text((project.brand || "U2BERCLUB").toUpperCase(), 50, brandY, { characterSpacing: 0.6 });
+  doc.fillColor("#FFFFFF").font(FONT_BOLD).fontSize(21)
+    .text(project.title || "Untitled", 50, titleY, { width: contentW });
+  doc.fillColor("#FFF3E0").font(FONT_REG).fontSize(9.5).text(
+    `Stage: ${project.stage || "—"}   ·   Created: ${project.createdAt ? new Date(project.createdAt).toLocaleDateString("en-IN") : "—"}   ·   Channel: ${channel ? channel.name : "—"}   ·   Pillars: ${pillarNames.length ? pillarNames.join(", ") : "—"}`,
+    50, metaY, { width: contentW }
+  );
+  doc.y = bandH + 22;
+  doc.x = doc.page.margins.left;
+  doc.fillColor(INK).font(FONT_REG);
+}
+
+function pdfChecklistRow(doc, item) {
+  const contentX = doc.page.margins.left + 18;
+  const contentW = doc.page.width - doc.page.margins.right - contentX;
+  const y = doc.y;
+  const boxX = doc.page.margins.left;
+  if (item.done) {
+    doc.roundedRect(boxX, y + 1, 11, 11, 2).fill(GREEN);
+    doc.save().strokeColor("#FFFFFF").lineWidth(1.4)
+      .moveTo(boxX + 2.3, y + 6.3).lineTo(boxX + 4.6, y + 8.6).lineTo(boxX + 8.7, y + 3).stroke();
+    doc.restore();
+  } else {
+    doc.roundedRect(boxX, y + 1, 11, 11, 2).lineWidth(1).stroke(BORDER);
+  }
+  doc.fillColor(item.done ? SOFT : INK).font(FONT_REG).fontSize(10).text(item.item, contentX, y, { width: contentW });
+  doc.x = boxX;
+  doc.y = Math.max(doc.y, y + 15) + 4;
+}
+
+function buildProjectPDF(doc, project, channels, ideaCategories) {
+  registerContentFlowFonts(doc);
   const channel = channels.find((c) => c.id === project.channelId);
   const pillarNames = channel ? (channel.pillars || []).filter((p) => (project.pillarIds || []).includes(p.id)).map((p) => p.name) : [];
+  const categoryName = (id) => (ideaCategories.find((c) => c.id === id) || {}).name;
 
-  // Header
-  doc.fontSize(9).fillColor(AMBER).font("Helvetica-Bold").text((project.brand || "").toUpperCase());
-  doc.fontSize(20).fillColor(INK).font("Helvetica-Bold").text(project.title || "Untitled");
-  doc.fontSize(10).fillColor(SOFT).font("Helvetica")
-    .text(`Stage: ${project.stage || ""}   ·   Created: ${project.createdAt ? new Date(project.createdAt).toLocaleDateString("en-IN") : ""}`);
-  if (channel || pillarNames.length) {
-    doc.moveDown(0.2);
-    doc.fontSize(10).fillColor(SOFT).text(`Channel: ${channel ? channel.name : "—"}   ·   Pillars: ${pillarNames.length ? pillarNames.join(", ") : "—"}`);
-  }
+  pdfHeaderBand(doc, project, channel, pillarNames);
 
   // Idea
   pdfSectionTitle(doc, "Idea");
   const ideas = project.ideas || [];
   if (!ideas.length) pdfBody(doc, "No ideas recorded.");
   ideas.forEach((i, idx) => {
-    if (idx > 0) doc.moveDown(0.4);
-    doc.fontSize(9).fillColor(SOFT).text(new Date(i.createdAt).toLocaleDateString("en-IN"));
+    if (idx > 0) doc.moveDown(0.6);
+    const start = pdfCardStart(doc);
+    doc.fontSize(8.5).fillColor(SOFT).font(FONT_REG).text(new Date(i.createdAt).toLocaleDateString("en-IN"));
+    doc.moveDown(0.15);
     pdfBody(doc, i.text);
-    Object.entries(i.customValues || {}).forEach(([colId, val]) => {
-      if (!val) return;
-      const col = (project.ideaColumns || []).find((c) => c.id === colId);
-      if (col) pdfLabel(doc, col.name, val);
-    });
+    const customEntries = Object.entries(i.customValues || {}).filter(([, v]) => v);
+    if (customEntries.length) {
+      doc.moveDown(0.2);
+      customEntries.forEach(([colId, val]) => {
+        const col = (project.ideaColumns || []).find((c) => c.id === colId);
+        if (col) pdfLabel(doc, col.name, val);
+      });
+    }
+    if (i.categoryId && categoryName(i.categoryId)) {
+      doc.moveDown(0.25);
+      pdfChips(doc, [categoryName(i.categoryId)]);
+    }
+    pdfCardEnd(doc, start, AMBER);
   });
 
   // Inspiration
@@ -633,49 +734,91 @@ function buildProjectPDF(doc, project, channels) {
   const insps = project.inspirations || [];
   if (!insps.length) pdfBody(doc, "No inspiration references saved.");
   insps.forEach((i, idx) => {
-    if (idx > 0) doc.moveDown(0.4);
+    if (idx > 0) doc.moveDown(0.6);
+    const start = pdfCardStart(doc);
     pdfLabel(doc, "URL", i.url);
-    if (i.reasons && i.reasons.length) pdfLabel(doc, "Why saved", i.reasons.join(", "));
-    if (i.note) pdfBody(doc, i.note);
+    if (i.note) { doc.moveDown(0.15); pdfBody(doc, i.note); }
+    if (i.reasons && i.reasons.length) { doc.moveDown(0.25); pdfChips(doc, i.reasons, { bg: GRAY_BG, fg: SOFT }); }
+    pdfCardEnd(doc, start, AMBER_DARK);
   });
 
-  // Scripts (every draft; the one linked to Shoot is marked)
+  // Scripts (every draft; the one linked to Shoot is highlighted)
   pdfSectionTitle(doc, "Script");
   const scripts = project.scripts || [];
   if (!scripts.length) pdfBody(doc, "No script drafts yet.");
   scripts.forEach((sc, idx) => {
-    if (idx > 0) doc.moveDown(0.8);
+    if (idx > 0) doc.moveDown(1);
     const inProduction = project.shoot && project.shoot.scriptId === sc.id;
-    doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text(sc.title + (inProduction ? "  (in production)" : ""));
-    doc.moveDown(0.3);
+    pdfPageBreakIfNeeded(doc, 40);
+    doc.fontSize(13).fillColor(INK).font(FONT_BOLD).text(sc.title);
+    if (inProduction) { doc.moveDown(0.15); pdfChips(doc, ["IN PRODUCTION"], { bg: GREEN_BG, fg: GREEN }); }
+    doc.moveDown(0.35);
 
+    // Full script — boxed like a quoted script block.
     if (sc.fullText && sc.fullText.trim()) {
-      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("FULL SCRIPT");
-      doc.moveDown(0.15);
-      pdfBody(doc, sc.fullText);
-      doc.moveDown(0.4);
+      doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text("FULL SCRIPT");
+      doc.moveDown(0.2);
+      const boxX = doc.page.margins.left;
+      const boxW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      doc.font(FONT_REG).fontSize(10.5);
+      const textH = doc.heightOfString(sc.fullText, { width: boxW - 24 });
+      pdfPageBreakIfNeeded(doc, textH + 24);
+      const boxY = doc.y;
+      doc.roundedRect(boxX, boxY, boxW, textH + 20, 6).fillAndStroke("#FAF6EC", BORDER);
+      doc.fillColor(INK).font(FONT_REG).fontSize(10.5).text(sc.fullText, boxX + 12, boxY + 10, { width: boxW - 24 });
+      doc.y = boxY + textH + 20 + 10;
+      doc.x = boxX;
     }
 
+    // Hooks — selected one highlighted.
     if ((sc.hooks || []).length) {
-      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("HOOK OPTIONS");
-      doc.moveDown(0.15);
+      doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text("HOOK OPTIONS");
+      doc.moveDown(0.2);
+      const boxX = doc.page.margins.left;
+      const boxW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
       sc.hooks.forEach((h) => {
-        pdfLabel(doc, `Version ${h.version}${h.selected ? " — selected" : ""}`, h.text);
-        if (h.notes) doc.fontSize(9).fillColor(SOFT).font("Helvetica-Oblique").text(h.notes);
-        doc.moveDown(0.25);
+        doc.font(FONT_REG).fontSize(10.5);
+        const textH = doc.heightOfString(h.text || "", { width: boxW - 24 });
+        let notesH = 0;
+        if (h.notes) { doc.font(FONT_REG).fontSize(9); notesH = doc.heightOfString(h.notes, { width: boxW - 24 }) + 6; }
+        const totalH = 18 + textH + notesH + 12;
+        pdfPageBreakIfNeeded(doc, totalH + 8);
+        const boxY = doc.y;
+        if (h.selected) doc.roundedRect(boxX, boxY, boxW, totalH, 6).fillAndStroke(AMBER_LIGHT, AMBER);
+        else doc.roundedRect(boxX, boxY, boxW, totalH, 6).lineWidth(1).stroke(BORDER);
+        doc.fillColor(AMBER_DARK).font(FONT_BOLD).fontSize(9)
+          .text(`VERSION ${h.version}`.toUpperCase() + (h.selected ? "   ·  SELECTED" : ""), boxX + 12, boxY + 9);
+        doc.fillColor(INK).font(FONT_REG).fontSize(10.5).text(h.text || "", boxX + 12, doc.y + 3, { width: boxW - 24 });
+        if (h.notes) doc.fillColor(SOFT).font(FONT_REG).fontSize(9).text(h.notes, boxX + 12, doc.y + 3, { width: boxW - 24 });
+        doc.y = boxY + totalH + 8;
+        doc.x = boxX;
       });
+      doc.moveDown(0.15);
     }
 
+    // Shot-by-shot — numbered badges + tag chips.
     if ((sc.blocks || []).length) {
-      doc.fontSize(9).fillColor(SOFT).font("Helvetica-Bold").text("SHOT-BY-SHOT");
-      doc.moveDown(0.15);
+      doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text("SHOT-BY-SHOT");
+      doc.moveDown(0.2);
+      const boxX = doc.page.margins.left;
+      const contentX = boxX + 28;
+      const contentW = doc.page.width - doc.page.margins.right - contentX;
       sc.blocks.forEach((b) => {
-        const tags = [b.shotType, b.angle, b.movement, b.location].filter(Boolean).join("  ·  ");
-        doc.fontSize(10.5).fillColor(INK).font("Helvetica-Bold").text(`${b.order}. `, { continued: true }).font("Helvetica").text(b.dialogue || "");
-        if (tags) doc.fontSize(9).fillColor(SOFT).text(tags);
-        if (b.props) doc.fontSize(9).fillColor(SOFT).text("Props/notes: " + b.props);
-        if (b.onScreenText) doc.fontSize(9).fillColor(SOFT).text("On-screen text: " + b.onScreenText);
-        doc.moveDown(0.3);
+        const tags = [b.shotType, b.angle, b.movement, b.location].filter(Boolean);
+        doc.font(FONT_REG).fontSize(10.5);
+        const dialogueH = Math.max(20, doc.heightOfString(b.dialogue || "—", { width: contentW }));
+        let extraH = (tags.length ? 24 : 0) + (b.props ? 14 : 0) + (b.onScreenText ? 14 : 0);
+        pdfPageBreakIfNeeded(doc, dialogueH + extraH + 14);
+        const boxY = doc.y;
+        doc.circle(boxX + 11, boxY + 10, 11).fill(AMBER);
+        doc.fillColor("#FFFFFF").font(FONT_BOLD).fontSize(9.5).text(String(b.order), boxX, boxY + 6, { width: 22, align: "center" });
+        doc.fillColor(INK).font(FONT_REG).fontSize(10.5).text(b.dialogue || "—", contentX, boxY, { width: contentW });
+        doc.x = contentX;
+        if (tags.length) { doc.moveDown(0.2); pdfChips(doc, tags, { bg: GRAY_BG, fg: SOFT, x: contentX }); doc.x = contentX; }
+        if (b.props) doc.fontSize(9).fillColor(SOFT).font(FONT_REG).text("Props/notes: " + b.props, contentX, doc.y, { width: contentW });
+        if (b.onScreenText) doc.fontSize(9).fillColor(SOFT).font(FONT_REG).text("On-screen text: " + b.onScreenText, contentX, doc.y, { width: contentW });
+        doc.y = Math.max(doc.y, boxY + 26) + 10;
+        doc.x = boxX;
       });
     }
   });
@@ -685,17 +828,23 @@ function buildProjectPDF(doc, project, channels) {
   const shoot = project.shoot || {};
   pdfLabel(doc, "Date", shoot.date);
   pdfLabel(doc, "Location", shoot.location);
-  if (shoot.generalNotes) pdfBody(doc, shoot.generalNotes);
+  if (shoot.generalNotes) { doc.moveDown(0.15); pdfBody(doc, shoot.generalNotes); }
   const shootSc = scripts.find((s) => s.id === shoot.scriptId);
   const shots = (shoot.shots || []).filter((s) => !shoot.scriptId || s.scriptId === shoot.scriptId);
   if (shootSc && shots.length) {
-    doc.moveDown(0.3);
+    doc.moveDown(0.35);
+    const STATUS_STYLE = {
+      shot: { bg: GREEN_BG, fg: GREEN }, reshoot: { bg: RED_BG, fg: RED }, pending: { bg: GRAY_BG, fg: SOFT },
+    };
     shots.forEach((sh) => {
       const b = (shootSc.blocks || []).find((x) => x.id === sh.blockId);
-      doc.fontSize(10).fillColor(INK).font("Helvetica-Bold")
-        .text(`Shot ${b ? b.order : "?"} — ${(sh.status || "pending").toUpperCase()}`);
-      if (sh.takeNotes) doc.fontSize(9.5).fillColor(SOFT).font("Helvetica").text(sh.takeNotes);
-      doc.moveDown(0.2);
+      const status = sh.status || "pending";
+      pdfPageBreakIfNeeded(doc, 40);
+      doc.fontSize(10).fillColor(INK).font(FONT_BOLD).text(`Shot ${b ? b.order : "?"}`, { continued: false });
+      doc.moveDown(0.15);
+      pdfChips(doc, [status.toUpperCase()], STATUS_STYLE[status] || STATUS_STYLE.pending);
+      if (sh.takeNotes) { doc.fontSize(9.5).fillColor(SOFT).font(FONT_REG).text(sh.takeNotes); doc.moveDown(0.1); }
+      doc.moveDown(0.25);
     });
   }
 
@@ -709,9 +858,7 @@ function buildProjectPDF(doc, project, channels) {
     if (edit.pacingNotes) pdfLabel(doc, "Pacing notes", edit.pacingNotes);
     if ((edit.checklist || []).length) {
       doc.moveDown(0.3);
-      edit.checklist.forEach((c) => {
-        doc.fontSize(10).fillColor(c.done ? SOFT : INK).text(`${c.done ? "[x]" : "[ ]"} ${c.item}`);
-      });
+      edit.checklist.forEach((c) => pdfChecklistRow(doc, c));
     }
   }
 
@@ -720,14 +867,31 @@ function buildProjectPDF(doc, project, channels) {
   const hasPost = ["url", "views", "watchTime", "retention", "saves", "shares", "comments", "notes"].some((k) => post[k]);
   if (hasPost) {
     pdfSectionTitle(doc, "Post");
+    const stats = [
+      ["Views", post.views], ["Watch time", post.watchTime], ["Retention", post.retention],
+      ["Saves", post.saves], ["Shares", post.shares], ["Comments", post.comments],
+    ].filter(([, v]) => v);
+    if (stats.length) {
+      pdfChips(doc, stats.map(([k, v]) => `${k}: ${v}`), { bg: AMBER_LIGHT, fg: AMBER_DARK });
+      doc.moveDown(0.15);
+    }
     pdfLabel(doc, "URL", post.url);
-    pdfLabel(doc, "Views", post.views);
-    pdfLabel(doc, "Watch time", post.watchTime);
-    pdfLabel(doc, "Retention", post.retention);
-    pdfLabel(doc, "Saves", post.saves);
-    pdfLabel(doc, "Shares", post.shares);
-    pdfLabel(doc, "Comments", post.comments);
-    if (post.notes) pdfBody(doc, post.notes);
+    if (post.notes) { doc.moveDown(0.15); pdfBody(doc, post.notes); }
+  }
+
+  // Footer: page numbers on every buffered page.
+  // (Writing this close to the bottom edge can make pdfkit think the text overflows
+  // and silently start a new page — zeroing the bottom margin during the write avoids that.)
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const oldBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.fontSize(8).fillColor(SOFT).font(FONT_REG)
+      .text(`U2berClub ContentFlow  ·  Page ${i - range.start + 1} of ${range.count}`,
+        doc.page.margins.left, doc.page.height - oldBottom + 14,
+        { width: doc.page.width - doc.page.margins.left - doc.page.margins.right, align: "center", lineBreak: false });
+    doc.page.margins.bottom = oldBottom;
   }
 }
 
@@ -738,6 +902,9 @@ router.get("/projects/:id/pdf", async (req, res) => {
   const { rows } = await q(
     "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='channels'", [req.user.id]);
   const channels = Array.isArray(rows[0]?.value?.channels) ? rows[0].value.channels : [];
+  const { rows: catRows } = await q(
+    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='ideaCategories'", [req.user.id]);
+  const ideaCategories = Array.isArray(catRows[0]?.value?.categories) ? catRows[0].value.categories : [];
 
   const filename = (project.title || "project").replace(/[^a-z0-9]+/gi, "_").slice(0, 60) + ".pdf";
   res.setHeader("Content-Type", "application/pdf");
@@ -745,7 +912,7 @@ router.get("/projects/:id/pdf", async (req, res) => {
 
   const doc = new PDFDocument({ margin: 50, size: "A4", bufferPages: true });
   doc.pipe(res);
-  buildProjectPDF(doc, project, channels);
+  buildProjectPDF(doc, project, channels, ideaCategories);
   doc.end();
 });
 
