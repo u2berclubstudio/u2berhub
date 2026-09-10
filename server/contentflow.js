@@ -629,10 +629,17 @@ function pdfSectionTitle(doc, text) {
   doc.x = doc.page.margins.left;
   doc.fillColor(INK).font(FONT_REG);
 }
-function pdfLabel(doc, label, value) {
+function pdfLabel(doc, label, value, opts = {}) {
   if (!value) return;
   doc.fontSize(9).fillColor(SOFT).font(FONT_BOLD).text(label.toUpperCase() + "  ", doc.x, doc.y, { continued: true });
-  doc.fontSize(10.5).fillColor(INK).font(FONT_REG).text(String(value));
+  if (opts.link) {
+    // clickable URL — coerce to an absolute link so pdfkit's annotation actually opens it
+    const href = /^https?:\/\//i.test(value) ? String(value) : `https://${value}`;
+    doc.fontSize(10.5).fillColor(AMBER_DARK).font(FONT_REG)
+      .text(String(value), { link: href, underline: true });
+  } else {
+    doc.fontSize(10.5).fillColor(INK).font(FONT_REG).text(String(value));
+  }
 }
 function pdfBody(doc, text) {
   doc.fontSize(10.5).fillColor(INK).font(FONT_REG).text(text, { align: "left" });
@@ -817,7 +824,7 @@ function buildProjectPDF(doc, project, channels, ideaCategories, canvasImages) {
   insps.forEach((i, idx) => {
     if (idx > 0) doc.moveDown(0.6);
     const start = pdfCardStart(doc);
-    pdfLabel(doc, "URL", i.url);
+    pdfLabel(doc, "URL", i.url, { link: true });
     if (i.note) { doc.moveDown(0.15); pdfBody(doc, i.note); }
     if (i.reasons && i.reasons.length) { doc.moveDown(0.25); pdfChips(doc, i.reasons, { bg: GRAY_BG, fg: SOFT }); }
     pdfCardEnd(doc, start, AMBER_DARK);
@@ -948,7 +955,7 @@ function buildProjectPDF(doc, project, channels, ideaCategories, canvasImages) {
   const hasEdit = edit.footageLink || edit.musicNotes || edit.pacingNotes || (edit.checklist || []).length;
   if (hasEdit) {
     pdfSectionTitle(doc, "Edit");
-    pdfLabel(doc, "Footage link", edit.footageLink);
+    pdfLabel(doc, "Footage link", edit.footageLink, { link: true });
     if (edit.musicNotes) pdfLabel(doc, "Music notes", edit.musicNotes);
     if (edit.pacingNotes) pdfLabel(doc, "Pacing notes", edit.pacingNotes);
     if ((edit.checklist || []).length) {
@@ -970,7 +977,7 @@ function buildProjectPDF(doc, project, channels, ideaCategories, canvasImages) {
       pdfChips(doc, stats.map(([k, v]) => `${k}: ${v}`), { bg: AMBER_LIGHT, fg: AMBER_DARK });
       doc.moveDown(0.15);
     }
-    pdfLabel(doc, "URL", post.url);
+    pdfLabel(doc, "URL", post.url, { link: true });
     if (post.notes) { doc.moveDown(0.15); pdfBody(doc, post.notes); }
   }
 
