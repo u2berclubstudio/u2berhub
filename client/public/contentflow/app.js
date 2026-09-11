@@ -1053,7 +1053,18 @@ async function confirmImport(projectId) {
   alert(`Imported ${result.created} reference${result.created === 1 ? "" : "s"} from SAVEDREELS.`);
 }
 
-// ---------- Idea tab ----------
+// ---------- Channel + pillars ----------
+// A quick reference for people writing a pillar's "purpose" for the first time —
+// tapping one drops the label into the textarea so they just finish the sentence.
+const PURPOSE_TYPES = [
+  { id: "educate", label: "Educate", desc: "Teaches the audience something useful — a how-to, a fact, a framework." },
+  { id: "entertain", label: "Entertain", desc: "Pure enjoyment — comedy, drama, relatable moments. No lesson required." },
+  { id: "inspire", label: "Inspire", desc: "Motivates or shifts mindset — transformation stories, big-picture ideas." },
+  { id: "trust", label: "Build trust", desc: "Shows expertise, behind-the-scenes, or process — makes you credible." },
+  { id: "sell", label: "Drive sales", desc: "Directly promotes a product/service/offer with a clear CTA." },
+  { id: "community", label: "Community", desc: "Engages the audience directly — replies, polls, UGC, shoutouts." },
+];
+
 function renderChannel(project, editable) {
   const chans = state.channels || [];
   const ch = chans.find((c) => c.id === project.channelId);
@@ -1082,7 +1093,10 @@ function renderChannel(project, editable) {
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">
           ${pillars.length ? pillars.map((pl) => {
             const on = chosen.includes(pl.id);
-            return `<button class="pillar-chip ${on ? "on" : ""}" ${editable ? `onclick="togglePillar('${project.id}','${pl.id}')"` : "disabled"}>${escapeHtml(pl.name)}</button>`;
+            return `<span class="pillar-chip-wrap">
+              <button class="pillar-chip ${on ? "on" : ""}" ${editable ? `onclick="togglePillar('${project.id}','${pl.id}')"` : "disabled"}>${escapeHtml(pl.name)}</button>
+              <button class="pillar-edit-btn" title="Purpose &amp; examples" onclick="openPillarEditor('${project.id}','${ch.id}','${pl.id}')">✎</button>
+            </span>`;
           }).join("") : '<span class="empty-state">No pillars on this channel yet.</span>'}
         </div>
         ${editable ? `<button class="btn btn-sm" onclick="addPillar('${project.id}','${ch.id}')">+ New pillar</button>` : ""}
@@ -1109,14 +1123,114 @@ async function addChannel(pid) {
 async function addPillar(pid, channelId) {
   const name = prompt("Pillar name (e.g. Mockumentary skits):");
   if (!name || !name.trim()) return;
-  await api(`/channels/${channelId}/pillars`, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+  const r = await api(`/channels/${channelId}/pillars`, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
   await loadChannels(); render();
+  // jump straight into the editor so purpose + examples get filled in right away
+  openPillarEditor(pid, channelId, r.pillar.id);
 }
 async function togglePillar(pid, pillarId) {
   const project = getProject(pid);
   const cur = project.pillarIds || [];
   const next = cur.includes(pillarId) ? cur.filter((x) => x !== pillarId) : [...cur, pillarId];
   await api(`/projects/${pid}/channel`, { method: "PATCH", body: JSON.stringify({ pillarIds: next }) });
+  await loadProjects(); render();
+}
+
+// ---- pillar editor: purpose (why) + a growable list of examples ----
+function openPillarEditor(pid, channelId, pillarId) {
+  const ch = (state.channels || []).find((c) => c.id === channelId);
+  const pl = ch ? (ch.pillars || []).find((p) => p.id === pillarId) : null;
+  if (!pl) return;
+  state._editPillar = { pid, channelId, pillarId };
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal modal-wide">
+        <h3>Pillar details</h3>
+        <div class="field"><label class="field-label">Name</label>
+          <input id="pl-name" class="input-sm" style="width:100%;" value="${escapeAttr(pl.name)}"></div>
+
+        <div class="field">
+          <label class="field-label">Purpose — why does this pillar exist?</label>
+          <p class="muted" style="font-size:11.5px;margin:2px 0 6px;">Tap a type to drop it in, then finish the sentence in your own words.</p>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+            ${PURPOSE_TYPES.map((t) => `<button type="button" class="chip-btn" title="${escapeAttr(t.desc)}" onclick="insertPurposeType('${t.label}')">${t.label}</button>`).join("")}
+          </div>
+          <textarea id="pl-purpose" rows="3" placeholder="e.g. Educate — teach one editing trick every episode so viewers trust us as the go-to source.">${escapeHtml(pl.purpose || "")}</textarea>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Examples — what kind of content fits here?</label>
+          <p class="muted" style="font-size:11.5px;margin:2px 0 6px;">Add a few so anyone on the team knows what counts, no guessing.</p>
+          <div id="pl-examples-list">${renderPillarExamples(pl)}</div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input id="pl-new-example" class="input-sm" style="flex:1;" placeholder="e.g. 'We tried X for 30 days' format" onkeydown="if(event.key==='Enter'){event.preventDefault();addPillarExample();}">
+            <button class="btn btn-sm" onclick="addPillarExample()">+ Add</button>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn" style="color:var(--red);" onclick="deletePillar('${pid}','${channelId}','${pillarId}')">Delete pillar</button>
+          <div style="flex:1;"></div>
+          <button class="btn" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="savePillarEdit()">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+function renderPillarExamples(pl) {
+  const examples = pl.examples || [];
+  if (!examples.length) return '<div class="empty-state" style="padding:10px 0;">No examples yet.</div>';
+  return examples.map((ex) => `
+    <div class="example-row" data-exid="${ex.id}">
+      <span>${escapeHtml(ex.text)}</span>
+      <button class="icon-btn" title="Remove" onclick="deletePillarExample('${ex.id}')">✕</button>
+    </div>`).join("");
+}
+function insertPurposeType(label) {
+  const el = document.getElementById("pl-purpose");
+  const prefix = el.value.trim() ? el.value.trim() + "  " : "";
+  el.value = prefix + label + " — ";
+  el.focus();
+  el.selectionStart = el.selectionEnd = el.value.length;
+}
+async function addPillarExample() {
+  const { channelId, pillarId } = state._editPillar;
+  const input = document.getElementById("pl-new-example");
+  const text = input.value.trim();
+  if (!text) return;
+  await api(`/channels/${channelId}/pillars/${pillarId}/examples`, { method: "POST", body: JSON.stringify({ text }) });
+  await loadChannels();
+  const ch = (state.channels || []).find((c) => c.id === channelId);
+  const pl = ch.pillars.find((p) => p.id === pillarId);
+  document.getElementById("pl-examples-list").innerHTML = renderPillarExamples(pl);
+  input.value = "";
+  input.focus();
+}
+async function deletePillarExample(exampleId) {
+  const { channelId, pillarId } = state._editPillar;
+  await api(`/channels/${channelId}/pillars/${pillarId}/examples/${exampleId}`, { method: "DELETE" });
+  await loadChannels();
+  const ch = (state.channels || []).find((c) => c.id === channelId);
+  const pl = ch.pillars.find((p) => p.id === pillarId);
+  document.getElementById("pl-examples-list").innerHTML = renderPillarExamples(pl);
+}
+async function savePillarEdit() {
+  const { channelId, pillarId } = state._editPillar;
+  const name = document.getElementById("pl-name").value.trim();
+  const purpose = document.getElementById("pl-purpose").value;
+  if (!name) { alert("Pillar needs a name."); return; }
+  await api(`/channels/${channelId}/pillars/${pillarId}`, { method: "PATCH", body: JSON.stringify({ name, purpose }) });
+  await loadChannels();
+  state._editPillar = null;
+  closeModal();
+  render();
+}
+async function deletePillar(pid, channelId, pillarId) {
+  if (!confirm("Delete this pillar? This removes it from every project on this channel.")) return;
+  await api(`/channels/${channelId}/pillars/${pillarId}`, { method: "DELETE" });
+  await loadChannels();
+  state._editPillar = null;
+  closeModal();
   await loadProjects(); render();
 }
 

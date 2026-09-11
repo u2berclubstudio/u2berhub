@@ -304,7 +304,15 @@ async function loadChannels(userId) {
   const { rows } = await q(
     "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='channels'", [userId]);
   const v = rows[0]?.value;
-  return Array.isArray(v?.channels) ? v.channels : [];
+  const channels = Array.isArray(v?.channels) ? v.channels : [];
+  // backfill fields added when pillars grew a purpose + examples
+  channels.forEach((c) => {
+    (c.pillars || []).forEach((p) => {
+      if (!("purpose" in p)) p.purpose = "";
+      if (!Array.isArray(p.examples)) p.examples = [];
+    });
+  });
+  return channels;
 }
 async function saveChannels(userId, channels) {
   await q(
@@ -353,10 +361,23 @@ router.post("/channels/:id/pillars", async (req, res) => {
   c.pillars = c.pillars || [];
   const dup = c.pillars.find((p) => p.name.toLowerCase() === name.toLowerCase());
   if (dup) return res.json({ pillar: dup, duplicate: true });
-  const pillar = { id: uid("pl"), name };
+  const pillar = { id: uid("pl"), name, purpose: "", examples: [] };
   c.pillars.push(pillar);
   await saveChannels(req.user.id, channels);
   res.json({ pillar });
+});
+
+// Update a pillar's name and/or purpose (why this content exists).
+router.patch("/channels/:id/pillars/:pillarId", async (req, res) => {
+  const channels = await loadChannels(req.user.id);
+  const c = channels.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Channel not found" });
+  const pl = (c.pillars || []).find((p) => p.id === req.params.pillarId);
+  if (!pl) return res.status(404).json({ error: "Pillar not found" });
+  if ("name" in req.body) pl.name = clean(req.body.name, 80) || pl.name;
+  if ("purpose" in req.body) pl.purpose = clean(req.body.purpose, 600);
+  await saveChannels(req.user.id, channels);
+  res.json({ pillar: pl });
 });
 
 router.delete("/channels/:id/pillars/:pillarId", async (req, res) => {
@@ -364,6 +385,34 @@ router.delete("/channels/:id/pillars/:pillarId", async (req, res) => {
   const c = channels.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Channel not found" });
   c.pillars = (c.pillars || []).filter((p) => p.id !== req.params.pillarId);
+  await saveChannels(req.user.id, channels);
+  res.json({ ok: true });
+});
+
+// Examples: a growable list of sample content ideas that fit this pillar,
+// so anyone on the team can see what "counts" without asking.
+router.post("/channels/:id/pillars/:pillarId/examples", async (req, res) => {
+  const text = clean(req.body.text, 200);
+  if (!text) return res.status(400).json({ error: "Give the example some text." });
+  const channels = await loadChannels(req.user.id);
+  const c = channels.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Channel not found" });
+  const pl = (c.pillars || []).find((p) => p.id === req.params.pillarId);
+  if (!pl) return res.status(404).json({ error: "Pillar not found" });
+  pl.examples = pl.examples || [];
+  const example = { id: uid("ex"), text };
+  pl.examples.push(example);
+  await saveChannels(req.user.id, channels);
+  res.json({ example });
+});
+
+router.delete("/channels/:id/pillars/:pillarId/examples/:exampleId", async (req, res) => {
+  const channels = await loadChannels(req.user.id);
+  const c = channels.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: "Channel not found" });
+  const pl = (c.pillars || []).find((p) => p.id === req.params.pillarId);
+  if (!pl) return res.status(404).json({ error: "Pillar not found" });
+  pl.examples = (pl.examples || []).filter((e) => e.id !== req.params.exampleId);
   await saveChannels(req.user.id, channels);
   res.json({ ok: true });
 });
