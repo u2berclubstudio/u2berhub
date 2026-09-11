@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Content Pillar Generator</title>
+<link rel="stylesheet" href="/pillargen/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" onclick="goList()">
+      <span class="brand-mark">CP</span>
+      <span class="brand-name">Content Pillar Generator</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-primary" id="newProfileBtn" onclick="addProfile()">+ New business</button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="modalRoot"></div>
+
+  <script src="/pillargen/app.js"></script>
+</body>
+</html>

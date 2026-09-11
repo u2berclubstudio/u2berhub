@@ -6,8 +6,9 @@ export default function Hub({ me, go }) {
   useEffect(() => { api.get("/api/tools").then((r) => setTools(r.tools || [])); }, []);
   const open = (t) => {
     if (t.status !== "live") return;
-    // ContentFlow is a static sub-app served at /contentflow/; others are in-app routes
+    // ContentFlow and Content Pillar Generator are static sub-apps; others are in-app routes
     if (t.id === "contentflow") { window.location.href = "/contentflow/"; return; }
+    if (t.id === "pillargen") { window.location.href = "/pillargen/"; return; }
     go("/tool/" + t.id);
   };
 

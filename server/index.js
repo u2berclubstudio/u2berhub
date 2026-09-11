@@ -13,6 +13,7 @@ import contentflow from "./contentflow.js";
 import trends from "./trends.js";
 import ideas from "./ideas.js";
 import feedsorter from "./feedsorter.js";
+import pillargen from "./pillargen.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -149,6 +150,7 @@ app.use("/api/contentflow", auth(true), requireTool("contentflow"), contentflow)
 app.use("/api/ideas", auth(true), requireTool("ideas"), ideas);
 app.use("/api/feedsorter", feedsorter);   // router enforces adminOnly itself
 app.use("/api/trends", trends);
+app.use("/api/pillargen", auth(true), requireTool("pillargen"), pillargen);
 
 /* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */
 app.get("/list/:username/:slug", (_q, res) =>

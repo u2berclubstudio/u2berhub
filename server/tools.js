@@ -6,6 +6,7 @@
 export const TOOLS = [
   { id: "savedreels", name: "SAVEDREELS", tagline: "Every reel you saved, finally working for you.", status: "live" },
   { id: "contentflow", name: "CONTENTFLOW", tagline: "Inspiration \u2192 Idea \u2192 Script \u2192 Shoot \u2192 Edit. Your pipeline.", status: "live" },
+  { id: "pillargen", name: "Content Pillar Generator", tagline: "Any business, any industry \u2014 turn it into a content-pillar strategy.", status: "live" },
   { id: "ideas", name: "IDEAS", tagline: "Jo bola, wo kahin khoya nahi \u2014 dictations se seedha script tak.", status: "live", optIn: true },
   { id: "trends", name: "TRENDS", tagline: "Community reel directory \u2014 curate lists, publish them.", status: "live" },
   { id: "feedsorter", name: "FEEDSORTER", tagline: "Scan any creator\u2019s profile \u2014 see which posts actually worked.", status: "live", adminOnly: true },
