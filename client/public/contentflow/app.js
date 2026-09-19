@@ -110,7 +110,9 @@ function renderBoardColumns() {
 
   const filtered = state.projects.filter((p) => {
     if (search && !p.title.toLowerCase().includes(search)) return false;
-    if (brand && (p.brand || "") !== brand) return false;
+    // trim — brand names can pick up stray leading/trailing spaces when typed,
+    // and the dropdown's option values are already trimmed (see renderBoard)
+    if (brand && (p.brand || "").trim() !== brand) return false;
     return true;
   });
 
