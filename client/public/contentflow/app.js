@@ -78,8 +78,44 @@ async function render() {
 
 // ---------- Board ----------
 function renderBoard() {
+  const brands = Array.from(new Set(state.projects.map((p) => (p.brand || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+  app.innerHTML = `
+    <div style="margin-bottom:18px;">
+      <div style="font-size:22px;font-weight:700;">Pipeline board</div>
+      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">Every piece of content, one place, full context at every stage.</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+      <input id="boardSearch" class="input-sm" placeholder="Search by title…" oninput="renderBoardColumns()" style="flex:1;min-width:200px;" />
+      <select id="boardBrandFilter" class="input-sm" onchange="renderBoardColumns()">
+        <option value="">All brands</option>
+        ${brands.map((b) => `<option value="${escapeAttr(b)}">${escapeHtml(b)}</option>`).join("")}
+      </select>
+      <button class="btn btn-sm" onclick="clearBoardFilters()">Clear</button>
+    </div>
+    <div id="boardColumns" class="board-columns"></div>
+  `;
+  renderBoardColumns();
+}
+
+function clearBoardFilters() {
+  document.getElementById("boardSearch").value = "";
+  document.getElementById("boardBrandFilter").value = "";
+  renderBoardColumns();
+}
+
+function renderBoardColumns() {
+  const search = (document.getElementById("boardSearch").value || "").trim().toLowerCase();
+  const brand = document.getElementById("boardBrandFilter").value || "";
+
+  const filtered = state.projects.filter((p) => {
+    if (search && !p.title.toLowerCase().includes(search)) return false;
+    if (brand && (p.brand || "") !== brand) return false;
+    return true;
+  });
+
   const cols = STAGES.map((stage) => {
-    const items = state.projects.filter((p) => p.stage === stage);
+    const items = filtered.filter((p) => p.stage === stage);
     const cards = items
       .map(
         (p) => `
@@ -98,13 +134,7 @@ function renderBoard() {
       </div>`;
   }).join("");
 
-  app.innerHTML = `
-    <div style="margin-bottom:18px;">
-      <div style="font-size:22px;font-weight:700;">Pipeline board</div>
-      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">Every piece of content, one place, full context at every stage.</div>
-    </div>
-    <div class="board-columns">${cols}</div>
-  `;
+  document.getElementById("boardColumns").innerHTML = cols;
 }
 
 function pipelineDots(stage) {
