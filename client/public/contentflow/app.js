@@ -1348,6 +1348,8 @@ async function promptNewIdeaCategory() {
 }
 
 async function updateIdeaCategory(pid, ideaId, categoryId) {
+  const idea = (getProject(pid).ideas || []).find((i) => i.id === ideaId);
+  if (idea) idea.categoryId = categoryId; // optimistic — so a fast reopen doesn't race the network reload
   await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ categoryId }) });
   await loadProjects(); render();
 }
@@ -1398,11 +1400,15 @@ function openIdeaNote(pid, ideaId) {
 }
 
 async function updateIdeaText(pid, ideaId, text) {
+  const idea = (getProject(pid).ideas || []).find((i) => i.id === ideaId);
+  if (idea) idea.text = text; // optimistic — see updateIdeaCategory above for why
   await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ text }) });
   await loadProjects();
 }
 
 async function updateIdeaCustomValue(pid, ideaId, columnId, value) {
+  const idea = (getProject(pid).ideas || []).find((i) => i.id === ideaId);
+  if (idea) { idea.customValues = idea.customValues || {}; idea.customValues[columnId] = value; } // optimistic
   await api(`/projects/${pid}/ideas/${ideaId}`, { method: "PATCH", body: JSON.stringify({ customValues: { [columnId]: value } }) });
   await loadProjects();
 }
