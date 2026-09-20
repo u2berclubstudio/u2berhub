@@ -1397,7 +1397,7 @@ function toggleAllIdeaSelected(pid, checked) {
   render();
 }
 
-function openIdeaNote(pid, ideaId) {
+function openIdeaNote(pid, ideaId, maximized) {
   const project = getProject(pid);
   const idea = (project.ideas || []).find((i) => i.id === ideaId);
   if (!idea) return;
@@ -1405,23 +1405,30 @@ function openIdeaNote(pid, ideaId) {
   const customColumns = project.ideaColumns || [];
   const dateStr = new Date(idea.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const categoryOptions = state.ideaCategories.map((c) => `<option value="${c.id}" ${c.id === idea.categoryId ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("");
+  const isMax = !!maximized;
 
   const customFields = customColumns.map((col) => `
     <div class="field">
       <label class="field-label">${escapeHtml(col.name)}</label>
-      <textarea rows="2" ${editable ? `onblur="updateIdeaCustomValue('${pid}','${ideaId}','${col.id}', this.value)"` : "disabled"}>${escapeHtml((idea.customValues || {})[col.id] || "")}</textarea>
+      <textarea rows="${isMax ? 6 : 2}" data-col-id="${col.id}" ${editable ? `onblur="updateIdeaCustomValue('${pid}','${ideaId}','${col.id}', this.value)"` : "disabled"}>${escapeHtml((idea.customValues || {})[col.id] || "")}</textarea>
     </div>`).join("");
 
   modalRoot.innerHTML = `
     <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
-      <div class="sticky-note modal-wide">
-        <div class="sticky-note-date">${dateStr}</div>
+      <div class="sticky-note modal-wide ${isMax ? "maximized" : ""}">
+        <div class="sticky-note-topbar">
+          <div class="sticky-note-date">${dateStr}</div>
+          <div class="sticky-note-tools">
+            <button type="button" title="${isMax ? "Restore" : "Open full page"}" onclick="toggleIdeaNoteSize('${pid}','${ideaId}', ${!isMax})">${isMax ? "⤡" : "⤢"}</button>
+            <button type="button" title="Close" onclick="closeModal()">✕</button>
+          </div>
+        </div>
         ${editable ? `
           <select class="input-sm sticky-note-category" onchange="updateIdeaCategory('${pid}','${ideaId}', this.value)">
             <option value="">— no category —</option>
             ${categoryOptions}
           </select>` : idea.categoryId ? `<div class="sticky-note-category"><span class="tag">${escapeHtml(categoryName(idea.categoryId))}</span></div>` : ""}
-        <textarea class="sticky-note-text" rows="6" ${editable ? "" : "disabled"} onblur="updateIdeaText('${pid}','${ideaId}', this.value)">${escapeHtml(idea.text)}</textarea>
+        <textarea class="sticky-note-text" rows="${isMax ? 22 : 6}" ${editable ? "" : "disabled"} onblur="updateIdeaText('${pid}','${ideaId}', this.value)">${escapeHtml(idea.text)}</textarea>
         ${customFields}
         <div class="modal-actions" style="margin-top:12px;">
           ${editable ? `<button class="btn" style="color:var(--red, #C0392B);border-color:var(--red, #C0392B);" onclick="deleteIdea('${pid}','${ideaId}')">Delete</button>` : ""}
@@ -1429,6 +1436,21 @@ function openIdeaNote(pid, ideaId) {
         </div>
       </div>
     </div>`;
+}
+
+// Switch the idea modal between compact and full-page: flush any edit that's still
+// sitting in a textarea (hasn't blurred yet) into local state first, so resizing
+// never discards text the user just typed.
+function toggleIdeaNoteSize(pid, ideaId, maximized) {
+  const note = document.querySelector(".sticky-note");
+  if (note) {
+    const textEl = note.querySelector(".sticky-note-text");
+    if (textEl && !textEl.disabled) updateIdeaText(pid, ideaId, textEl.value);
+    note.querySelectorAll("textarea[data-col-id]").forEach((el) => {
+      if (!el.disabled) updateIdeaCustomValue(pid, ideaId, el.dataset.colId, el.value);
+    });
+  }
+  openIdeaNote(pid, ideaId, maximized);
 }
 
 async function updateIdeaText(pid, ideaId, text) {

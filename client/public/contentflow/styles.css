@@ -237,6 +237,18 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
   box-shadow: 0 10px 30px rgba(0,0,0,.18); transform: rotate(-0.6deg); width: 420px; max-width: 90vw;
 }
 .sticky-note.modal-wide { width: 480px; }
+.sticky-note.maximized {
+  width: 94vw; max-width: 94vw; height: 90vh; max-height: 90vh;
+  transform: none; display: flex; flex-direction: column; overflow-y: auto;
+}
+.sticky-note.maximized .sticky-note-text { flex: 1; }
+.sticky-note-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sticky-note-tools { display: flex; gap: 6px; }
+.sticky-note-tools button {
+  width: 26px; height: 26px; border: none; border-radius: 6px; background: rgba(43,35,32,.1);
+  color: #4a3f1a; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.sticky-note-tools button:hover { background: rgba(43,35,32,.2); }
 .sticky-note-date { font-size: 11px; color: #8a7a3a; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px; }
 .sticky-note-category { margin-bottom: 10px; }
 .sticky-note-text {
