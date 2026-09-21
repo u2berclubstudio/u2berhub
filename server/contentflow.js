@@ -727,19 +727,24 @@ function pdfCardEnd(doc, start, color) {
 
 function pdfHeaderBand(doc, project, channel, pillarNames) {
   const contentW = doc.page.width - 100;
+  const metaText = `Stage: ${project.stage || "—"}   ·   Created: ${project.createdAt ? new Date(project.createdAt).toLocaleDateString("en-IN") : "—"}   ·   Channel: ${channel ? channel.name : "—"}   ·   Pillars: ${pillarNames.length ? pillarNames.join(", ") : "—"}`;
+
   doc.font(FONT_BOLD).fontSize(21);
   const titleH = doc.heightOfString(project.title || "Untitled", { width: contentW });
-  const brandY = 24, titleY = brandY + 15, metaY = titleY + titleH + 8, bandH = metaY + 17;
+  doc.font(FONT_REG).fontSize(9.5);
+  const metaH = doc.heightOfString(metaText, { width: contentW });
+
+  // bandH accounts for however many lines the meta line (incl. Pillars) actually
+  // wraps to — a long pillar list can run 2-3 lines, and a fixed-height band would
+  // clip it / let it bleed into the section below.
+  const brandY = 24, titleY = brandY + 15, metaY = titleY + titleH + 8, bandH = metaY + metaH + 14;
 
   doc.rect(0, 0, doc.page.width, bandH).fill(AMBER);
   doc.fillColor("#FFF3E0").font(FONT_BOLD).fontSize(9)
     .text((project.brand || "U2BERCLUB").toUpperCase(), 50, brandY, { characterSpacing: 0.6 });
   doc.fillColor("#FFFFFF").font(FONT_BOLD).fontSize(21)
     .text(project.title || "Untitled", 50, titleY, { width: contentW });
-  doc.fillColor("#FFF3E0").font(FONT_REG).fontSize(9.5).text(
-    `Stage: ${project.stage || "—"}   ·   Created: ${project.createdAt ? new Date(project.createdAt).toLocaleDateString("en-IN") : "—"}   ·   Channel: ${channel ? channel.name : "—"}   ·   Pillars: ${pillarNames.length ? pillarNames.join(", ") : "—"}`,
-    50, metaY, { width: contentW }
-  );
+  doc.fillColor("#FFF3E0").font(FONT_REG).fontSize(9.5).text(metaText, 50, metaY, { width: contentW });
   doc.y = bandH + 22;
   doc.x = doc.page.margins.left;
   doc.fillColor(INK).font(FONT_REG);
