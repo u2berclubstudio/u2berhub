@@ -14,6 +14,7 @@ import trends from "./trends.js";
 import ideas from "./ideas.js";
 import feedsorter from "./feedsorter.js";
 import pillargen from "./pillargen.js";
+import teardown from "./teardown.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -151,6 +152,7 @@ app.use("/api/ideas", auth(true), requireTool("ideas"), ideas);
 app.use("/api/feedsorter", feedsorter);   // router enforces adminOnly itself
 app.use("/api/trends", trends);
 app.use("/api/pillargen", auth(true), requireTool("pillargen"), pillargen);
+app.use("/api/teardown", auth(true), requireTool("teardown"), teardown);
 
 /* Public shareable list pages: /list/<username>/<slug> -> standalone page (no login) */
 app.get("/list/:username/:slug", (_q, res) =>

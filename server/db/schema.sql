@@ -158,3 +158,18 @@ CREATE INDEX IF NOT EXISTS idx_ideas_user        ON ideas(user_id, spoken_at DES
 CREATE INDEX IF NOT EXISTS idx_ideas_user_status ON ideas(user_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ideas_dedupe
   ON ideas(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+-- ============ TEARDOWN: creator content teardowns (imported JSON) ============
+-- One row per imported teardown (a whole creator's reels, analysed). The full
+-- teardown lives in `data`; the scalar columns are just for the list view.
+CREATE TABLE IF NOT EXISTS teardowns (
+  id          TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  creator     TEXT NOT NULL DEFAULT '',
+  platform    TEXT NOT NULL DEFAULT 'instagram',
+  reel_count  INTEGER NOT NULL DEFAULT 0,
+  total_plays BIGINT NOT NULL DEFAULT 0,
+  data        JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_teardowns_user ON teardowns(user_id, created_at DESC);

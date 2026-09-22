@@ -10,6 +10,6 @@ export const TOOLS = [
   { id: "ideas", name: "IDEAS", tagline: "Jo bola, wo kahin khoya nahi \u2014 dictations se seedha script tak.", status: "live", optIn: true },
   { id: "trends", name: "TRENDS", tagline: "Community reel directory \u2014 curate lists, publish them.", status: "live" },
   { id: "feedsorter", name: "FEEDSORTER", tagline: "Scan any creator\u2019s profile \u2014 see which posts actually worked.", status: "live", adminOnly: true },
-  { id: "teardown",   name: "TEARDOWN",   tagline: "Any reel, pulled apart — why it went viral.",     status: "soon" },
+  { id: "teardown",   name: "TEARDOWN",   tagline: "A creator's reels, pulled apart — hook, setup, payoff. Export to Excel, PDF, JSON.", status: "live" },
   { id: "storyboard", name: "REEL → STORYBOARD", tagline: "Turn any reel into a shot-by-shot board.", status: "soon" },
 ];
