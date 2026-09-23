@@ -158,6 +158,8 @@ app.use("/api/teardown", auth(true), requireTool("teardown"), teardown);
 app.get("/list/:username/:slug", (_q, res) =>
   res.sendFile(path.join(__dirname, "..", "client", "dist", "list.html")));
 
+app.use("/frameguide", auth(false), (req, res, next) =>
+  req.user && req.user.status === "active" && canUseTool(req.user, "frameguide") ? next() : res.redirect("/"));
 /* ---------------- STATIC (built client) ---------------- */
 app.use(express.static(path.join(__dirname, "..", "client", "dist")));
 app.get("*", (_q, res) => res.sendFile(path.join(__dirname, "..", "client", "dist", "index.html")));

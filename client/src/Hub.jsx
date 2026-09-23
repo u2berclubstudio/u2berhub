@@ -9,6 +9,7 @@ export default function Hub({ me, go }) {
     // ContentFlow and Content Pillar Generator are static sub-apps; others are in-app routes
     if (t.id === "contentflow") { window.location.href = "/contentflow/"; return; }
     if (t.id === "pillargen") { window.location.href = "/pillargen/"; return; }
+        if (t.id === "frameguide") { window.location.href = "/frameguide/"; return; }
     go("/tool/" + t.id);
   };
 

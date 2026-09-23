@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Frame Guide">
+<meta name="theme-color" content="#0b0c0e">
+<title>Frame Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #0b0c0e;
+    --panel: #15171b;
+    --panel-2: #1f2228;
+    --ink: #eef0f3;
+    --muted: #8b919c;
+    --accent: #ffc53d;
+    --ok: #34d17a;
+    --warn: #ff5a4f;
+    --hud: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; overflow: hidden;
+    overscroll-behavior: none; touch-action: manipulation; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #app { height: 100%; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+
+  /* top bar */
+  .top { display: flex; align-items: center; gap: 8px; padding: 8px 16px; }
+  .seg { display: flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button { font-family: var(--hud); font-weight: 600; font-size: 15px; letter-spacing: .04em;
+    padding: 5px 9px; border-radius: 7px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .seg button[aria-pressed="true"] { background: var(--panel-2); color: var(--accent); }
+  .spacer { flex: 1; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 10px; background: var(--panel);
+    display: grid; place-items: center; }
+  .icon-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--panel-2); }
+
+  /* stage */
+  #stage { flex: 1; min-height: 0; position: relative; display: grid; place-items: center; overflow: hidden; }
+  #frame { position: relative; overflow: hidden; background: #000; }
+  #frame > * { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #video { object-fit: cover; }
+  #video.mirror, #ref.mirror { transform: scaleX(-1); }
+  #ref { opacity: .45; pointer-events: none; }
+  #ov { pointer-events: none; }
+  #frame { cursor: crosshair; }
+
+  .readout { position: absolute; left: 50%; transform: translateX(-50%); top: 10px;
+    font-family: var(--hud); font-weight: 700; font-size: 18px; letter-spacing: .06em;
+    padding: 2px 10px; border-radius: 6px; background: rgba(0,0,0,.55); pointer-events: none;
+    font-variant-numeric: tabular-nums; }
+  .toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    font-family: var(--hud); font-weight: 600; font-size: 20px; letter-spacing: .05em; text-transform: uppercase;
+    padding: 4px 14px; border-radius: 8px; background: rgba(0,0,0,.6); pointer-events: none;
+    transition: opacity .25s; text-align: center; width: max-content; max-width: calc(100% - 32px); }
+  .toast small { display: block; font-family: -apple-system, system-ui, sans-serif; font-size: 13px; font-weight: 500;
+    letter-spacing: 0; text-transform: none; color: #d6d9de; margin-top: 2px; }
+
+  #gate { position: absolute; inset: auto 16px 16px 16px; display: flex; flex-direction: column; gap: 8px;
+    align-items: center; text-align: center; background: rgba(11,12,14,.86); backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px); border: 1px solid var(--panel-2); border-radius: 14px; padding: 14px 16px; }
+  #gate p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 40ch; }
+  #gate .err { color: var(--warn); }
+  .primary { background: var(--accent); color: #1a1406; font-weight: 700; padding: 10px 22px; border-radius: 12px; }
+  .ghost-link { color: var(--muted); font-size: 13px; text-decoration: underline; }
+
+  /* bottom */
+  .bottom { padding: 6px 0 10px; display: flex; flex-direction: column; gap: 8px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px 16px; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: 0 0 auto; scroll-snap-align: center; font-family: var(--hud); font-weight: 600; font-size: 16px;
+    letter-spacing: .05em; text-transform: uppercase; padding: 6px 12px; border-radius: 999px;
+    background: var(--panel); color: var(--muted); }
+  .chip[aria-pressed="true"] { background: var(--accent); color: #1a1406; }
+  .controls { display: flex; align-items: center; gap: 10px; padding: 0 16px; }
+  .controls label { font-family: var(--hud); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  #opacity { flex: 1; min-width: 60px; accent-color: var(--accent); }
+  .swatches { display: flex; gap: 6px; }
+  .sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 2px var(--ground); }
+  .sw[aria-pressed="true"] { border-color: var(--ink); }
+  .actions { display: flex; gap: 8px; padding: 0 16px; }
+  .actions .icon-btn { flex: 1; width: auto; height: 42px; display: flex; gap: 6px; justify-content: center; align-items: center;
+    font-family: var(--hud); font-weight: 600; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+
+  @media (orientation: landscape) and (max-height: 520px) {
+    #app { flex-direction: row; }
+    .top { flex-direction: column; padding: 10px 8px; }
+    .top .seg { flex-direction: column; }
+    .bottom { width: 300px; justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <div class="seg" id="aspects" role="group" aria-label="Frame shape"></div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="levelBtn" aria-pressed="false" aria-label="Horizon level" title="Horizon level">
+      <svg viewBox="0 0 24 24"><path d="M3 12h18"/><circle cx="12" cy="12" r="3.2"/></svg>
+    </button>
+    <button class="icon-btn" id="flipCam" aria-label="Switch camera" title="Switch camera">
+      <svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><path d="M9.5 13.5a2.8 2.8 0 0 0 5 1.2M14.5 12.5a2.8 2.8 0 0 0-5-1.2"/></svg>
+    </button>
+  </div>
+
+  <main id="stage">
+    <div id="frame">
+      <canvas id="bg"></canvas>
+      <video id="video" playsinline muted autoplay hidden></video>
+      <canvas id="ref" hidden></canvas>
+      <canvas id="ov"></canvas>
+    </div>
+    <div class="readout" id="levelOut" hidden>0.0°</div>
+    <div class="toast" id="toast" style="opacity:0">Rule of thirds</div>
+    <div id="gate">
+      <button class="primary" id="startBtn">Start camera</button>
+      <p id="gateMsg">Ye sample scene hai. Camera start karo, frame set karo, phir Blackmagic mein same lens (1x) par record karo.</p>
+    </div>
+  </main>
+
+  <div class="bottom">
+    <div class="chips" id="chips" role="group" aria-label="Composition template"></div>
+    <div class="controls">
+      <label for="opacity">Lines</label>
+      <input type="range" id="opacity" min="15" max="100" value="70">
+      <div class="swatches" id="swatches" role="group" aria-label="Line colour"></div>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="flipH" aria-pressed="false" title="Mirror left-right">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M8 7 3 12l5 5M16 7l5 5-5 5"/></svg>Flip ↔
+      </button>
+      <button class="icon-btn" id="flipV" aria-pressed="false" title="Mirror top-bottom">
+        <svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg>Flip ↕
+      </button>
+      <button class="icon-btn" id="refBtn" aria-pressed="false" title="Freeze a reference frame to re-match later">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg><span id="refLabel">Ref</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const PHI = (1 + Math.sqrt(5)) / 2;
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), frame = $('frame'), video = $('video');
+  const bg = $('bg'), ref = $('ref'), ov = $('ov');
+
+  const ASPECTS = [
+    { id: '9:16', r: 9 / 16 }, { id: '4:5', r: 4 / 5 }, { id: '1:1', r: 1 },
+    { id: '16:9', r: 16 / 9 }, { id: 'Full', r: 0 }
+  ];
+  const COLORS = ['#ffffff', '#ffd60a', '#32d7ff', '#ff453a'];
+
+  // ---------- state ----------
+  const state = { aspect: '9:16', tpl: 'thirds', opacity: 70, color: COLORS[0],
+    flipH: false, flipV: false, level: false, facing: 'environment', fx: 0.5, fy: 0.42 };
+  try { Object.assign(state, JSON.parse(localStorage.getItem('frameguide') || '{}')); } catch (e) {}
+  const save = () => { try { localStorage.setItem('frameguide', JSON.stringify(state)); } catch (e) {} };
+
+  let stream = null, hasRef = false, tilt = null, W = 0, H = 0, dpr = 1;
+
+  // ---------- geometry helpers ----------
+  function line(c, x1, y1, x2, y2) { c.moveTo(x1, y1); c.lineTo(x2, y2); }
+  function clipRay(px, py, dx, dy, w, h) {
+    let t = Infinity;
+    if (dx > 0) t = Math.min(t, (w - px) / dx); else if (dx < 0) t = Math.min(t, -px / dx);
+    if (dy > 0) t = Math.min(t, (h - py) / dy); else if (dy < 0) t = Math.min(t, -py / dy);
+    return [px + dx * t, py + dy * t];
+  }
+  function ray(c, px, py, dx, dy, w, h) { const [x, y] = clipRay(px, py, dx, dy, w, h); line(c, px, py, x, y); }
+  function foot(px, py, ax, ay, bx, by) {
+    const vx = bx - ax, vy = by - ay, t = ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy);
+    return [ax + t * vx, ay + t * vy];
+  }
+  function dot(c, x, y, r) { c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2); }
+
+  // ---------- templates ----------
+  // draw(c, w, h, L, K): c styled & flipped, L = base line px, K = kit (labels, focus point)
+  function brackets(c, x, y, w, h, s) {
+    c.moveTo(x, y + s); c.lineTo(x, y); c.lineTo(x + s, y);
+    c.moveTo(x + w - s, y); c.lineTo(x + w, y); c.lineTo(x + w, y + s);
+    c.moveTo(x + w, y + h - s); c.lineTo(x + w, y + h); c.lineTo(x + w - s, y + h);
+    c.moveTo(x + s, y + h); c.lineTo(x, y + h); c.lineTo(x, y + h - s);
+  }
+  function faint(c, f, fn) { const a = c.globalAlpha; c.globalAlpha = a * f; fn(); c.globalAlpha = a; }
+  function dashed(c, L, fn) { c.save(); c.setLineDash([L * 5, L * 4]); fn(); c.restore(); }
+  function thirdsFaint(c, w, h) { faint(c, 0.35, () => { c.beginPath();
+    [1, 2].forEach(i => { line(c, w * i / 3, 0, w * i / 3, h); line(c, 0, h * i / 3, w, h * i / 3); }); c.stroke(); }); }
+
+  const TEMPLATES = [
+    { id: 'thirds', name: 'Rule of thirds', tip: 'Subject ko kisi line ya point par rakho', draw(c, w, h, L) {
+      c.beginPath();
+      [1, 2].forEach(i => { line(c, w * i / 3, 0, w * i / 3, h); line(c, 0, h * i / 3, w, h * i / 3); });
+      c.stroke();
+      c.beginPath(); [1, 2].forEach(i => [1, 2].forEach(j => dot(c, w * i / 3, h * j / 3, L * 3))); c.fill();
+    }},
+    { id: 'center', name: 'Center', tip: 'Subject bilkul beech mein — direct, strong feel', draw(c, w, h, L) {
+      const m = Math.min(w, h);
+      c.beginPath(); line(c, w / 2, h / 2 - m * 0.2, w / 2, h / 2 + m * 0.2); line(c, w / 2 - m * 0.2, h / 2, w / 2 + m * 0.2, h / 2); c.stroke();
+      c.beginPath(); c.arc(w / 2, h / 2, m * 0.1, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); brackets(c, w * 0.3, h * 0.3, w * 0.4, h * 0.4, m * 0.06); c.stroke();
+    }},
+    { id: 'symmetry', name: 'Symmetry', tip: 'Dono side mirror jaise barabar rakho', draw(c, w, h, L, K) {
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); line(c, w / 2, 0, w / 2, h); c.stroke(); c.restore();
+      dashed(c, L, () => { c.beginPath(); line(c, 0, h / 2, w, h / 2); c.stroke(); });
+      c.beginPath();
+      [0.15, 0.3, 0.42].forEach(f => { const t = Math.min(w, h) * 0.035;
+        line(c, w / 2 - w * f, h / 2 - t, w / 2 - w * f, h / 2 + t); line(c, w / 2 + w * f, h / 2 - t, w / 2 + w * f, h / 2 + t); });
+      c.stroke();
+      K.label(w / 2, h * 0.06, 'MIRROR AXIS');
+    }},
+    { id: 'phi', name: 'Golden ratio', tip: 'Thirds se thoda andar — zyada natural balance', draw(c, w, h, L) {
+      const a = 1 / (PHI * PHI), b = 1 / PHI;
+      c.beginPath(); [a, b].forEach(f => { line(c, w * f, 0, w * f, h); line(c, 0, h * f, w, h * f); }); c.stroke();
+      c.beginPath(); [a, b].forEach(i => [a, b].forEach(j => dot(c, w * i, h * j, L * 3))); c.fill();
+    }},
+    { id: 'spiral', name: 'Golden spiral', tip: 'Subject spiral ki aankh par. Flip se direction badlo', draw(c, w, h, L) {
+      c.save();
+      if (h > w) { c.transform(0, 1, 1, 0, 0, 0); [w, h] = [h, w]; }
+      const k = 1 / PHI, guides = new Path2D(), sp = new Path2D(), P = Math.PI;
+      let x = 0, y = 0, rw = w, rh = h;
+      for (let i = 0; i < 11; i++) {
+        const d = i % 4;
+        if (d === 0) { const s = rw * k; guides.moveTo(x + s, y); guides.lineTo(x + s, y + rh);
+          sp.ellipse(x + s, y + rh, s, rh, 0, P, 1.5 * P); x += s; rw -= s; }
+        else if (d === 1) { const s = rh * k; guides.moveTo(x, y + s); guides.lineTo(x + rw, y + s);
+          sp.ellipse(x, y + s, rw, s, 0, 1.5 * P, 2 * P); y += s; rh -= s; }
+        else if (d === 2) { const s = rw * k; guides.moveTo(x + rw - s, y); guides.lineTo(x + rw - s, y + rh);
+          sp.ellipse(x + rw - s, y, s, rh, 0, 0, 0.5 * P); rw -= s; }
+        else { const s = rh * k; guides.moveTo(x, y + rh - s); guides.lineTo(x + rw, y + rh - s);
+          sp.ellipse(x + rw, y + rh - s, rw, s, 0, 0.5 * P, P); rh -= s; }
+      }
+      faint(c, 0.45, () => c.stroke(guides));
+      c.lineWidth = L * 1.6; c.stroke(sp);
+      c.beginPath(); dot(c, x + rw / 2, y + rh / 2, L * 3.5); c.fill();
+      c.restore();
+    }},
+    { id: 'leading', name: 'Leading lines', focus: true, tip: 'Road, railing, wall ko point ki taraf le jao. Tap karke point badlo', draw(c, w, h, L, K) {
+      const [fx, fy] = K.focus();
+      c.beginPath();
+      [[0, h], [w, h], [w * 0.28, h], [w * 0.72, h], [0, h * 0.62], [w, h * 0.62]].forEach(([x, y]) => line(c, x, y, fx, fy));
+      c.stroke();
+      c.beginPath(); c.arc(fx, fy, Math.min(w, h) * 0.05, 0, Math.PI * 2); c.stroke();
+      c.beginPath(); dot(c, fx, fy, L * 3); c.fill();
+    }},
+    { id: 'diagonal', name: 'Diagonal', tip: 'Main lines aur subject 45° diagonals par', draw(c, w, h) {
+      c.beginPath(); ray(c, 0, 0, 1, 1, w, h); ray(c, w, 0, -1, 1, w, h); ray(c, 0, h, 1, -1, w, h); ray(c, w, h, -1, -1, w, h); c.stroke();
+      faint(c, 0.4, () => { c.beginPath(); line(c, 0, 0, w, h); line(c, w, 0, 0, h); c.stroke(); });
+    }},
+    { id: 'fif', name: 'Frame within frame', tip: 'Door, window, arch ko andar ka frame banao', draw(c, w, h, L, K) {
+      const x = w * 0.18, y = h * 0.16, iw = w * 0.64, ih = h * 0.6;
+      c.save(); c.globalAlpha = 1; c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.rect(0, 0, w, h); c.rect(x, y, iw, ih); c.fill('evenodd'); c.restore();
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); c.rect(x, y, iw, ih); c.stroke(); c.restore();
+      c.beginPath(); brackets(c, x + iw * 0.3, y + ih * 0.3, iw * 0.4, ih * 0.4, Math.min(iw, ih) * 0.08); c.stroke();
+      K.label(w / 2, y / 2, 'DOOR / WINDOW / ARCH'); K.label(w / 2, y + ih * 0.5, 'SUBJECT');
+    }},
+    { id: 'negative', name: 'Negative space', tip: 'Subject chhota rakho, baaki jagah khaali chhodo. Flip se side badlo', draw(c, w, h, L, K) {
+      const m = Math.min(w, h), sx = w * 0.22, sy = h * 0.74, r = m * 0.08;
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); c.arc(sx, sy, r, 0, Math.PI * 2); c.stroke(); c.restore();
+      dashed(c, L, () => { c.beginPath(); c.rect(w * 0.38, h * 0.08, w * 0.56, h * 0.56); c.stroke(); });
+      K.label(w * 0.66, h * 0.36, 'KHAALI JAGAH'); K.label(sx, sy + r + m * 0.05, 'SUBJECT');
+    }},
+    { id: 'triangle', name: 'Triangular', tip: 'Teen elements ya subject ka shape triangle mein', draw(c, w, h, L) {
+      const p = [[w / 2, h * 0.18], [w * 0.14, h * 0.84], [w * 0.86, h * 0.84]];
+      c.save(); c.lineWidth = L * 1.6; c.beginPath(); c.moveTo(...p[0]); c.lineTo(...p[1]); c.lineTo(...p[2]); c.closePath(); c.stroke(); c.restore();
+      c.beginPath(); p.forEach(([x, y]) => dot(c, x, y, L * 4)); c.fill();
+    }},
+    { id: 'scurve', name: 'S-curve', tip: 'Road, river ya body line ko S shape mein ghumao. Flip se mirror', draw(c, w, h, L) {
+      thirdsFaint(c, w, h);
+      c.save(); c.lineWidth = L * 2.2; c.beginPath();
+      c.moveTo(w * 0.28, h); c.bezierCurveTo(w * 1.05, h * 0.78, w * 1.0, h * 0.52, w * 0.5, h * 0.5);
+      c.bezierCurveTo(w * 0.0, h * 0.48, w * -0.05, h * 0.22, w * 0.72, 0); c.stroke(); c.restore();
+    }},
+    { id: 'lcurve', name: 'L-curve', tip: 'Ek vertical element side mein, horizontal base neeche', draw(c, w, h, L) {
+      thirdsFaint(c, w, h);
+      c.save(); c.lineWidth = L * 2.6; c.lineJoin = 'round'; c.beginPath();
+      c.moveTo(w / 3, h * 0.1); c.lineTo(w / 3, h * 2 / 3); c.lineTo(w * 0.94, h * 2 / 3); c.stroke(); c.restore();
+      c.save(); c.globalAlpha = c.globalAlpha * 0.18; c.fillRect(0, h * 2 / 3, w, h / 3); c.fillRect(0, 0, w / 3, h * 2 / 3); c.restore();
+    }},
+    { id: 'depth', name: 'Depth / layers', tip: 'Foreground, midground, background — teeno mein kuch rakho', draw(c, w, h, L, K) {
+      dashed(c, L, () => { c.beginPath(); line(c, 0, h * 0.4, w, h * 0.4); line(c, 0, h * 0.7, w, h * 0.7); c.stroke(); });
+      faint(c, 0.4, () => { c.beginPath(); line(c, 0, h, w / 2, h * 0.4); line(c, w, h, w / 2, h * 0.4); c.stroke(); });
+      K.label(w / 2, h * 0.2, 'BACKGROUND'); K.label(w / 2, h * 0.55, 'MIDGROUND'); K.label(w / 2, h * 0.86, 'FOREGROUND');
+    }},
+    { id: 'radial', name: 'Radial', focus: true, tip: 'Sab kuch ek center se bahar failta hua. Tap se center badlo', draw(c, w, h, L, K) {
+      const [fx, fy] = K.focus(), m = Math.max(w, h);
+      c.beginPath(); [0.06, 0.14, 0.25, 0.4, 0.6].forEach(f => { c.moveTo(fx + m * f, fy); c.arc(fx, fy, m * f, 0, Math.PI * 2); }); c.stroke();
+      faint(c, 0.6, () => { c.beginPath();
+        for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8; ray(c, fx, fy, Math.cos(a), Math.sin(a), w, h); } c.stroke(); });
+    }},
+    { id: 'pattern', name: 'Pattern & repetition', tip: 'Repeat hota pattern — aur ek cheez jo pattern todti hai', draw(c, w, h, L, K) {
+      const cols = w > h ? 6 : 4, cell = w / cols, rows = Math.round(h / cell), ch = h / rows;
+      faint(c, 0.6, () => { c.beginPath();
+        for (let i = 1; i < cols; i++) line(c, i * cell, 0, i * cell, h);
+        for (let j = 1; j < rows; j++) line(c, 0, j * ch, w, j * ch); c.stroke(); });
+      const bx = Math.floor(cols * 0.66) * cell, by = Math.floor(rows / 3) * ch;
+      c.save(); c.lineWidth = L * 2.6; c.strokeRect(bx, by, cell, ch); c.restore();
+      K.label(bx + cell / 2, by + ch / 2, 'BREAK');
+    }},
+    { id: 'fill', name: 'Fill the frame', tip: 'Subject ko edge tak bhar do, background gayab', draw(c, w, h, L, K) {
+      const m = Math.min(w, h);
+      c.save(); c.lineWidth = L * 2.2; c.beginPath(); brackets(c, w * 0.04, h * 0.04, w * 0.92, h * 0.92, m * 0.1); c.stroke(); c.restore();
+      dashed(c, L, () => { c.beginPath(); c.rect(w * 0.1, h * 0.1, w * 0.8, h * 0.8); c.stroke(); });
+      K.label(w / 2, h / 2, 'SUBJECT YAHAN TAK');
+    }},
+    { id: 'headroom', name: 'Headroom / look room', tip: 'Aankhein upar wali line par, dekhne ki side mein jagah. Flip se side badlo', draw(c, w, h, L, K) {
+      const ey = h / 3, cx = w / 3, ry = h * 0.11, rx = Math.min(ry * 0.78, w * 0.13), cy = ey + ry * 0.1, top = cy - ry;
+      dashed(c, L, () => { c.beginPath(); line(c, 0, ey, w, ey); c.stroke(); });
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      [-1, 1].forEach(sd => { // neck + shoulders
+        c.moveTo(cx + sd * rx * 0.45, cy + ry * 0.9); c.lineTo(cx + sd * rx * 0.5, cy + ry * 1.3);
+        c.quadraticCurveTo(cx + sd * rx * 2.3, cy + ry * 1.45, cx + sd * rx * 2.6, cy + ry * 2.2); c.lineTo(cx + sd * rx * 2.8, h); });
+      c.stroke(); c.restore();
+      c.beginPath(); line(c, cx, 0, cx, top); line(c, cx - rx * 0.4, 0, cx + rx * 0.4, 0); line(c, cx - rx * 0.4, top, cx + rx * 0.4, top); c.stroke();
+      const ax = cx + rx * 1.4, bx = w * 0.92;
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); line(c, ax, ey, bx, ey); line(c, bx, ey, bx - L * 9, ey - L * 6); line(c, bx, ey, bx - L * 9, ey + L * 6); c.stroke(); c.restore();
+      K.label(cx + rx * 1.6, top / 2, 'HEADROOM', 'left'); K.label((ax + bx) / 2, ey - L * 14, 'LOOK ROOM'); K.label(w * 0.02, ey - L * 12, 'EYE LINE', 'left');
+    }},
+    { id: 'horizon', name: 'Horizon placement', tip: 'Horizon beech mein nahi — neeche ya upar third par. Level on kar lo', draw(c, w, h, L, K) {
+      c.save(); c.lineWidth = L * 1.8; c.beginPath(); line(c, 0, h / 3, w, h / 3); line(c, 0, h * 2 / 3, w, h * 2 / 3); c.stroke(); c.restore();
+      faint(c, 0.5, () => dashed(c, L, () => { c.beginPath(); line(c, 0, h / 2, w, h / 2); c.stroke(); }));
+      K.label(w / 2, h / 3 - L * 14, 'YAHAN = ZYADA ZAMEEN'); K.label(w / 2, h * 2 / 3 - L * 14, 'YAHAN = ZYADA SKY');
+      K.label(w / 2, h / 2 - L * 14, 'BEECH = SIRF REFLECTION');
+    }},
+    { id: 'vanishing', name: 'Vanishing point', focus: true, tip: 'Saari lines ek point par milti hain. Tap se point set karo', draw(c, w, h, L, K) {
+      const [fx, fy] = K.focus();
+      c.beginPath(); [[0, 0], [w, 0], [0, h], [w, h], [w / 2, 0], [w / 2, h], [0, h / 2], [w, h / 2]].forEach(([x, y]) => line(c, x, y, fx, fy)); c.stroke();
+      faint(c, 0.6, () => { c.beginPath(); [0.62, 0.34].forEach(s => c.rect(fx - fx * s, fy - fy * s, w * s, h * s)); c.stroke(); });
+      dashed(c, L, () => { c.beginPath(); line(c, 0, fy, w, fy); c.stroke(); });
+      c.beginPath(); dot(c, fx, fy, L * 4); c.fill();
+    }},
+    { id: 'tilted', name: 'Dutch / tilted', tip: 'Camera jaan-bujh kar tedha — tension aur energy. Flip se angle badlo', draw(c, w, h, L) {
+      c.save(); c.beginPath(); c.rect(0, 0, w, h); c.clip();
+      c.translate(w / 2, h / 2); c.rotate(-15 * Math.PI / 180);
+      const R = Math.hypot(w, h);
+      c.beginPath(); [-1, 1].forEach(s => { line(c, -R, s * h / 6, R, s * h / 6); line(c, s * w / 6, -R, s * w / 6, R); }); c.stroke();
+      c.lineWidth = L * 2.2; c.beginPath(); line(c, -R, 0, R, 0); c.stroke();
+      c.restore();
+    }},
+    // extras
+    { id: 'gtriangles', name: 'Golden triangles', tip: 'Subject un do points par jahan lines milti hain', draw(c, w, h, L) {
+      const f1 = foot(w, 0, 0, 0, w, h), f2 = foot(0, h, 0, 0, w, h);
+      c.beginPath(); line(c, 0, 0, w, h); line(c, w, 0, f1[0], f1[1]); line(c, 0, h, f2[0], f2[1]); c.stroke();
+      c.beginPath(); dot(c, f1[0], f1[1], L * 3); dot(c, f2[0], f2[1], L * 3); c.fill();
+    }},
+    { id: 'dynamic', name: 'Dynamic symmetry', tip: 'Diagonals aur unke perpendiculars par elements', draw(c, w, h) {
+      c.beginPath(); line(c, 0, 0, w, h); line(c, w, 0, 0, h); c.stroke();
+      faint(c, 0.7, () => { c.beginPath();
+        ray(c, w, 0, -h, w, w, h); ray(c, 0, h, h, -w, w, h); ray(c, 0, 0, h, w, w, h); ray(c, w, h, -h, -w, w, h); c.stroke(); });
+    }},
+    { id: 'reels', name: 'Reels safe zone', tip: 'Text aur face is box ke andar — baaki Instagram UI dhak leta hai', draw(c, w, h, L, K) {
+      const t = h * 0.14, b = h * 0.35, s = w * 0.06; // approx. Meta 9:16 guidance
+      c.save(); c.fillStyle = 'rgba(0,0,0,.42)'; c.globalAlpha = 1;
+      c.fillRect(0, 0, w, t); c.fillRect(0, h - b, w, b); c.fillRect(0, t, s, h - t - b); c.fillRect(w - s, t, s, h - t - b); c.restore();
+      c.beginPath(); c.rect(s, t, w - 2 * s, h - t - b); c.stroke();
+      K.label(w / 2, t / 2, 'TOP UI'); K.label(w / 2, h - b / 2, 'CAPTION / BUTTONS');
+    }},
+    { id: 'none', name: 'Clean', tip: 'Koi lines nahi', draw() {} }
+  ];
+
+  // ---------- layout ----------
+  function aspectRatio() { const a = ASPECTS.find(a => a.id === state.aspect); return a ? a.r : 9 / 16; }
+  function layout() {
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    let r = aspectRatio(), fw, fh;
+    if (!r) { fw = sw; fh = sh; } else { fw = Math.min(sw, sh * r); fh = fw / r; }
+    W = Math.round(fw); H = Math.round(fh);
+    frame.style.width = W + 'px'; frame.style.height = H + 'px';
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    [bg, ov, ref].forEach(cv => {
+      if (cv === ref && hasRef) return; // keep the frozen frame's pixels
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    });
+    drawSample(); render();
+  }
+
+  // ---------- sample scene (shown until camera starts) ----------
+  function drawSample() {
+    const c = bg.getContext('2d'), w = bg.width, h = bg.height;
+    const sky = c.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#20314d'); sky.addColorStop(0.55, '#d98a5a'); sky.addColorStop(0.62, '#f2c07a');
+    sky.addColorStop(0.63, '#2b2a33'); sky.addColorStop(1, '#141319');
+    c.fillStyle = sky; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#ffe2a8'; c.beginPath(); c.arc(w * 0.618, h * 0.56, Math.min(w, h) * 0.06, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1b1a22'; c.beginPath(); c.moveTo(0, h * 0.64);
+    for (let i = 0; i <= 20; i++) c.lineTo(w * i / 20, h * (0.62 + 0.03 * Math.sin(i * 1.3) + 0.02 * Math.cos(i * 0.7)));
+    c.lineTo(w, h); c.lineTo(0, h); c.fill();
+    // a standing figure on the left third
+    const fx = w / 3, base = h * 0.8, u = Math.min(w, h) * 0.02;
+    c.fillStyle = '#0c0b10';
+    c.beginPath(); c.arc(fx, base - u * 9.5, u * 1.4, 0, Math.PI * 2); c.fill();
+    c.fillRect(fx - u * 1.6, base - u * 8, u * 3.2, u * 5); c.fillRect(fx - u * 1.3, base - u * 3.2, u * 1.1, u * 3.2);
+    c.fillRect(fx + u * 0.2, base - u * 3.2, u * 1.1, u * 3.2);
+  }
+
+  // ---------- overlay render ----------
+  let raf = 0;
+  function render() { if (!raf) raf = requestAnimationFrame(paint); }
+  function paint() {
+    raf = 0;
+    const c = ov.getContext('2d');
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, ov.width, ov.height);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const L = Math.max(1, Math.min(W, H) / 380);
+    const tpl = TEMPLATES.find(t => t.id === state.tpl) || TEMPLATES[0];
+    c.save();
+    c.translate(W / 2, H / 2); c.scale(state.flipH ? -1 : 1, state.flipV ? -1 : 1); c.translate(-W / 2, -H / 2);
+    c.globalAlpha = state.opacity / 100;
+    c.strokeStyle = c.fillStyle = state.color; c.lineWidth = L;
+    c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 2 * L;
+    const labels = [];
+    const K = {
+      label: (x, y, text, align) => labels.push({ x, y, text, align }),
+      focus: () => [state.flipH ? W - state.fx * W : state.fx * W, state.flipV ? H - state.fy * H : state.fy * H]
+    };
+    tpl.draw(c, W, H, L, K);
+    c.restore();
+
+    if (labels.length) {  // text drawn un-mirrored, at the flipped position
+      c.save(); c.globalAlpha = Math.min(1, state.opacity / 100 + 0.15); c.fillStyle = state.color;
+      c.shadowColor = 'rgba(0,0,0,.8)'; c.shadowBlur = 3 * L;
+      c.font = `600 ${Math.round(Math.max(11, 12 * L))}px "Barlow Condensed", "Arial Narrow", sans-serif`;
+      c.textBaseline = 'middle';
+      labels.forEach(({ x, y, text, align }) => {
+        const px = state.flipH ? W - x : x, py = state.flipV ? H - y : y;
+        c.textAlign = !align ? 'center' : (state.flipH ? (align === 'left' ? 'right' : 'left') : align);
+        c.fillText(text, px, py);
+      });
+      c.restore();
+    }
+
+    if (state.level && tilt !== null) {
+      const ok = Math.abs(tilt) < 0.5, col = ok ? '#34d17a' : '#ff5a4f';
+      c.save(); c.translate(W / 2, H / 2);
+      c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = L;
+      c.beginPath(); line(c, -W * 0.22, 0, -W * 0.12, 0); line(c, W * 0.12, 0, W * 0.22, 0); c.stroke();
+      c.rotate(-tilt * Math.PI / 180);
+      c.strokeStyle = col; c.lineWidth = L * 2.2;
+      c.beginPath(); line(c, -W * 0.34, 0, W * 0.34, 0); c.stroke();
+      c.restore();
+    }
+  }
+
+  // ---------- UI build ----------
+  function pressed(el, v) { el.setAttribute('aria-pressed', String(!!v)); }
+  const aspectsEl = $('aspects'), chipsEl = $('chips'), swEl = $('swatches');
+  ASPECTS.forEach(a => {
+    const b = document.createElement('button'); b.textContent = a.id; b.dataset.id = a.id;
+    b.onclick = () => { state.aspect = a.id; save(); syncUI(); layout(); if (hasRef) clearRef(); };
+    aspectsEl.appendChild(b);
+  });
+  TEMPLATES.forEach(t => {
+    const b = document.createElement('button'); b.className = 'chip'; b.textContent = t.name; b.dataset.id = t.id;
+    b.onclick = () => setTpl(t.id);
+    chipsEl.appendChild(b);
+  });
+  COLORS.forEach(col => {
+    const b = document.createElement('button'); b.className = 'sw'; b.style.background = col; b.dataset.c = col;
+    b.setAttribute('aria-label', 'Line colour ' + col);
+    b.onclick = () => { state.color = col; save(); syncUI(); render(); };
+    swEl.appendChild(b);
+  });
+  function syncUI() {
+    aspectsEl.querySelectorAll('button').forEach(b => pressed(b, b.dataset.id === state.aspect));
+    chipsEl.querySelectorAll('button').forEach(b => pressed(b, b.dataset.id === state.tpl));
+    swEl.querySelectorAll('button').forEach(b => pressed(b, b.dataset.c === state.color));
+    pressed($('flipH'), state.flipH); pressed($('flipV'), state.flipV); pressed($('levelBtn'), state.level);
+    $('opacity').value = state.opacity;
+    $('levelOut').hidden = !state.level;
+  }
+  let toastT;
+  function toast(msg, tip, ms) { const t = $('toast'); t.textContent = msg;
+    if (tip) { const s = document.createElement('small'); s.textContent = tip; t.appendChild(s); }
+    t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => t.style.opacity = 0, ms || (tip ? 2600 : 1100)); }
+  function setTpl(id) {
+    state.tpl = id; save(); syncUI(); render();
+    const t = TEMPLATES.find(t => t.id === id); toast(t.name, t.tip);
+    const chip = chipsEl.querySelector(`[data-id="${id}"]`); chip && chip.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }
+  function stepTpl(dir) {
+    const i = TEMPLATES.findIndex(t => t.id === state.tpl);
+    setTpl(TEMPLATES[(i + dir + TEMPLATES.length) % TEMPLATES.length].id);
+  }
+
+  $('opacity').oninput = (e) => { state.opacity = +e.target.value; save(); render(); };
+  $('flipH').onclick = () => { state.flipH = !state.flipH; save(); syncUI(); render(); };
+  $('flipV').onclick = () => { state.flipV = !state.flipV; save(); syncUI(); render(); };
+
+  // swipe on the frame to change template
+  let sx = null, sy = null;
+  stage.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (sx === null) return;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) { stepTpl(dx < 0 ? 1 : -1); swipedAt = Date.now(); }
+    sx = null;
+  }, { passive: true });
+  // tap on the frame moves the point for leading lines / radial / vanishing point
+  let swipedAt = 0;
+  frame.addEventListener('click', e => {
+    if (Date.now() - swipedAt < 400) return;
+    const tpl = TEMPLATES.find(t => t.id === state.tpl); if (!tpl || !tpl.focus) return;
+    const r = frame.getBoundingClientRect();
+    state.fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    state.fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    save(); render();
+  });
+  window.addEventListener('keydown', e => { if (e.key === 'ArrowRight') stepTpl(1); if (e.key === 'ArrowLeft') stepTpl(-1); });
+
+  // ---------- camera ----------
+  let wakeLock = null;
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stream) keepAwake(); });
+
+  async function startCamera() {
+    const msg = $('gateMsg');
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      msg.className = 'err';
+      msg.textContent = 'Camera sirf HTTPS link par chalta hai. Ye file kisi HTTPS server par host karo (jaise tools.u2berclub.com) aur Safari mein kholo.';
+      return;
+    }
+    try {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+        video: { facingMode: { ideal: state.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      video.srcObject = stream; video.hidden = false;
+      video.classList.toggle('mirror', state.facing === 'user');
+      await video.play().catch(() => {});
+      $('gate').hidden = true; keepAwake();
+    } catch (err) {
+      msg.className = 'err';
+      msg.textContent = err && err.name === 'NotAllowedError'
+        ? 'Camera permission band hai. Settings › Safari › Camera mein "Allow" karo, phir page reload karo.'
+        : 'Camera start nahi hua (' + (err && err.name || 'error') + '). Page reload karke dobara try karo.';
+    }
+  }
+  $('startBtn').onclick = startCamera;
+  $('flipCam').onclick = () => { state.facing = state.facing === 'user' ? 'environment' : 'user'; save(); if (stream) startCamera(); };
+
+  // ---------- reference frame (freeze & ghost) ----------
+  function clearRef() { hasRef = false; ref.hidden = true; pressed($('refBtn'), false); $('refLabel').textContent = 'Ref'; }
+  $('refBtn').onclick = () => {
+    if (hasRef) { clearRef(); toast('Reference cleared'); return; }
+    ref.width = Math.round(W * dpr); ref.height = Math.round(H * dpr);
+    const c = ref.getContext('2d');
+    if (stream && video.videoWidth) {
+      const vr = video.videoWidth / video.videoHeight, fr = W / H;
+      let sw = video.videoWidth, sh = video.videoHeight, sx0 = 0, sy0 = 0;
+      if (vr > fr) { sw = sh * fr; sx0 = (video.videoWidth - sw) / 2; } else { sh = sw / fr; sy0 = (video.videoHeight - sh) / 2; }
+      c.drawImage(video, sx0, sy0, sw, sh, 0, 0, ref.width, ref.height);
+      ref.classList.toggle('mirror', state.facing === 'user');
+    } else {
+      c.drawImage(bg, 0, 0);
+    }
+    hasRef = true; ref.hidden = false; pressed($('refBtn'), true); $('refLabel').textContent = 'Clear';
+    toast('Reference locked');
+  };
+
+  // ---------- horizon level ----------
+  function onMotion(e) {
+    const g = e.accelerationIncludingGravity; if (!g || g.x === null) return;
+    const mag = Math.hypot(g.x, g.y);
+    if (mag < 3) { tilt = null; $('levelOut').textContent = 'FLAT'; render(); return; } // phone lying flat
+    let a = Math.atan2(g.x, -g.y) * 180 / Math.PI;
+    a = a - 90 * Math.round(a / 90);           // deviation from nearest upright / landscape
+    tilt = tilt === null ? a : tilt * 0.7 + a * 0.3; // light smoothing
+    const out = $('levelOut'); out.textContent = (tilt >= 0 ? '+' : '') + tilt.toFixed(1) + '°';
+    out.style.color = Math.abs(tilt) < 0.5 ? 'var(--ok)' : 'var(--ink)';
+    render();
+  }
+  let motionOn = false;
+  async function enableLevel() {
+    try {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        const r = await DeviceMotionEvent.requestPermission(); if (r !== 'granted') throw new Error('denied');
+      }
+      if (!motionOn) { window.addEventListener('devicemotion', onMotion); motionOn = true; }
+      return true;
+    } catch (e) { toast('Motion permission chahiye'); return false; }
+  }
+  $('levelBtn').onclick = async () => {
+    if (!state.level) { if (!(await enableLevel())) return; state.level = true; $('levelOut').textContent = '—'; }
+    else { state.level = false; tilt = null; }
+    save(); syncUI(); render();
+  };
+  if (state.level) { state.level = false; } // motion permission needs a tap each visit on iOS
+
+  // ---------- boot ----------
+  new ResizeObserver(layout).observe(stage);
+  window.addEventListener('orientationchange', () => setTimeout(layout, 250));
+  syncUI(); layout();
+})();
+</script>
+</body>
+</html>
