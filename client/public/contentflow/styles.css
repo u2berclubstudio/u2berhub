@@ -266,6 +266,12 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 /* clickable captured-shot cards */
 .shot-ref-card:hover { border-color: var(--amber) !important; box-shadow: 0 2px 6px rgba(232,133,43,.12); }
 
+/* Shot breakdown: Timeline / Teaching breakdown toggle */
+.seg-btn { border: none; background: #fff; padding: 4px 10px; font-size: 11.5px; cursor: pointer; color: var(--ink-soft); font-family: inherit; }
+.seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+.seg-btn.active { background: var(--amber); color: #fff; font-weight: 600; }
+.seg-btn:hover:not(.active) { background: var(--cream); }
+
 /* ============ Mood canvas ============ */
 .mood-canvas {
   position: relative;

@@ -327,6 +327,23 @@ const SAVE_REASONS = ["Hook", "Story", "Editing", "Camera", "Transition", "Actin
 const SHOT_TYPES = ["Extreme close-up", "Close-up", "Medium close-up", "Medium", "Medium-wide", "Wide", "Extreme-wide / establishing"];
 const SHOT_ANGLES = ["Eye-level", "Low angle", "High angle", "Dutch / tilted", "Overhead / top-down"];
 const SHOT_MOVES = ["Static", "Handheld", "Pan", "Tilt", "Push in", "Pull out", "Snap zoom", "Whip / whip-pan", "Tracking / follow", "Orbit"];
+// Narrative-role vocabulary for the "teaching breakdown" view — matches the Reel
+// Deconstructor extension's own taxonomy.role, so imported shots need no remapping.
+const SHOT_ROLES = ["Hook", "Context / setup", "Build", "Proof", "Payoff", "Reset attention", "CTA"];
+
+// Reel Deconstructor's taxonomy uses slightly different wording than ContentFlow's own
+// dropdowns for angle/movement (size matches exactly). These map an imported tag to the
+// closest ContentFlow option; an unmappable/unknown source value comes through blank
+// rather than forcing a misleading guess.
+const RD_ANGLE_MAP = {
+  "Eye-level": "Eye-level", "High angle": "High angle", "Low angle": "Low angle",
+  "Overhead / top-down": "Overhead / top-down", "Dutch / tilted": "Dutch / tilted",
+  "POV": "Eye-level",
+};
+const RD_MOVE_MAP = {
+  "Static": "Static", "Pan / tilt": "Pan", "Zoom / push-in": "Push in",
+  "Handheld": "Handheld", "Follow / tracking": "Tracking / follow", "Can't tell": "",
+};
 
 // ============ CANVAS BOARD (free-drag inspiration board) ============
 const TAG_COLORS = [
@@ -650,7 +667,7 @@ function fmtTime(sec) {
 function openShotStudy(projectId, inspId) {
   const project = state.projects.find((p) => p.id === projectId);
   const insp = project.inspirations.find((i) => i.id === inspId);
-  state._shotStudy = { projectId, inspId, shots: JSON.parse(JSON.stringify(insp.shots || [])) };
+  state._shotStudy = { projectId, inspId, shots: JSON.parse(JSON.stringify(insp.shots || [])), view: "timeline" };
   const insta = isInstagramUrl(insp.url);
 
   modalRoot.innerHTML = `
@@ -661,6 +678,15 @@ function openShotStudy(projectId, inspId) {
           ${insta ? "Instagram embed can't report exact time — type the timestamp as you watch." : ""}
           Study the reference and log each shot: when it happens, what type, and why it works.
         </p>
+
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px;border:1px dashed var(--border);border-radius:8px;background:var(--amber-light,#FDF3E7);">
+          <span style="font-size:12px;font-weight:600;">Already ran this through Reel Deconstructor?</span>
+          <button class="btn btn-sm" onclick="document.getElementById('rdZipUpload').click()">📦 Import from .zip</button>
+          <input type="file" id="rdZipUpload" accept=".zip" style="display:none;" onchange="importShotsFromZip(this.files[0])">
+          <button class="btn btn-sm" onclick="document.getElementById('rdPdfUpload').click()">📄 Import from PDF</button>
+          <input type="file" id="rdPdfUpload" accept=".pdf" style="display:none;" onchange="importShotsFromPdf(this.files[0])">
+          <span id="rdImportStatus" class="muted" style="font-size:11.5px;"></span>
+        </div>
 
         <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
           <div style="flex:1;min-width:280px;">
@@ -714,12 +740,25 @@ function openShotStudy(projectId, inspId) {
               <label class="field-label">What's happening / why it works</label>
               <textarea id="shotNote" rows="2" placeholder="Hook line lands here, tight on face, cuts on the beat..."></textarea>
             </div>
+            <div class="field">
+              <label class="field-label">Story role <span class="muted" style="font-weight:400;">(for the teaching view)</span></label>
+              <select id="shotRole" class="input-sm" style="width:100%;">
+                <option value="">—</option>
+                ${SHOT_ROLES.map((t) => `<option>${t}</option>`).join("")}
+              </select>
+            </div>
             <button class="btn btn-primary btn-sm" onclick="addShot()">+ Capture this shot</button>
           </div>
         </div>
 
         <div style="margin-top:16px;">
-          <div class="section-title" style="font-size:13px;">Shots logged</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div class="section-title" style="font-size:13px;">Shots logged</div>
+            <div class="seg-toggle" style="display:flex;gap:2px;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+              <button type="button" class="seg-btn ${state._shotStudy.view === "timeline" ? "active" : ""}" onclick="setShotStudyView('timeline')">Timeline</button>
+              <button type="button" class="seg-btn ${state._shotStudy.view === "teaching" ? "active" : ""}" onclick="setShotStudyView('teaching')">Teaching breakdown</button>
+            </div>
+          </div>
           <div id="shotList"></div>
         </div>
 
@@ -762,12 +801,14 @@ function addShot() {
   const angle = document.getElementById("shotAngle").value;
   const move = document.getElementById("shotMove").value;
   const note = document.getElementById("shotNote").value.trim();
+  const role = document.getElementById("shotRole").value;
   if (!time && !type) { alert("Add at least a timestamp or a shot type."); return; }
-  state._shotStudy.shots.push({ id: "s_" + Date.now(), time: time || "0:00", type, angle, move, note });
+  state._shotStudy.shots.push({ id: "s_" + Date.now(), time: time || "0:00", type, angle, move, note, role });
   // sort by timestamp (m:ss)
   state._shotStudy.shots.sort((a, b) => toSec(a.time) - toSec(b.time));
   document.getElementById("shotTime").value = "";
   document.getElementById("shotNote").value = "";
+  document.getElementById("shotRole").value = "";
   renderShotList();
 }
 function toSec(t) { const p = String(t).split(":").map(Number); return p.length === 2 ? p[0] * 60 + p[1] : (p[0] || 0); }
@@ -777,21 +818,44 @@ function removeShot(id) {
   renderShotList();
 }
 
+function setShotStudyView(view) {
+  state._shotStudy.view = view;
+  const seg = document.querySelector(".seg-toggle");
+  if (seg) seg.querySelectorAll(".seg-btn").forEach((b) => b.classList.toggle("active", b.textContent.trim() === (view === "timeline" ? "Timeline" : "Teaching breakdown")));
+  renderShotList();
+}
+
+function shotRowHtml(s) {
+  return `
+    <div style="display:flex;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;align-items:flex-start;">
+      <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
+      <span style="flex:1;min-width:0;">
+        <b style="font-size:13px;">${escapeHtml(s.type || "—")}</b>
+        ${s.angle ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.angle)}</span>` : ""}
+        ${s.move ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.move)}</span>` : ""}
+        ${s.note ? `<span style="display:block;font-size:12px;color:var(--ink-soft);margin-top:2px;">${escapeHtml(s.note)}</span>` : ""}
+      </span>
+      <button class="btn btn-sm" onclick="removeShot('${s.id}')" style="padding:2px 7px;">✕</button>
+    </div>`;
+}
+
 function renderShotList() {
   const shots = state._shotStudy.shots;
-  document.getElementById("shotList").innerHTML = shots.length
-    ? shots.map((s) => `
-      <div style="display:flex;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;align-items:flex-start;">
-        <span class="chip" style="font-family:monospace;">${escapeHtml(s.time)}</span>
-        <span style="flex:1;min-width:0;">
-          <b style="font-size:13px;">${escapeHtml(s.type || "—")}</b>
-          ${s.angle ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.angle)}</span>` : ""}
-          ${s.move ? `<span class="muted" style="font-size:11px;"> · ${escapeHtml(s.move)}</span>` : ""}
-          ${s.note ? `<span style="display:block;font-size:12px;color:var(--ink-soft);margin-top:2px;">${escapeHtml(s.note)}</span>` : ""}
-        </span>
-        <button class="btn btn-sm" onclick="removeShot('${s.id}')" style="padding:2px 7px;">✕</button>
-      </div>`).join("")
-    : `<div class="muted" style="font-size:12.5px;padding:6px 0;">No shots captured yet.</div>`;
+  const host = document.getElementById("shotList");
+  if (!shots.length) { host.innerHTML = `<div class="muted" style="font-size:12.5px;padding:6px 0;">No shots captured yet.</div>`; return; }
+
+  if (state._shotStudy.view === "teaching") {
+    const groups = SHOT_ROLES.map((role) => ({ role, shots: shots.filter((s) => s.role === role) })).filter((g) => g.shots.length);
+    const ungrouped = shots.filter((s) => !s.role);
+    if (ungrouped.length) groups.push({ role: "Ungrouped", shots: ungrouped });
+    host.innerHTML = groups.map((g) => `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--amber-dark,#C96A18);margin-bottom:6px;">${escapeHtml(g.role)}</div>
+        ${g.shots.map(shotRowHtml).join("")}
+      </div>`).join("");
+  } else {
+    host.innerHTML = shots.map(shotRowHtml).join("");
+  }
 }
 
 async function saveShots() {
@@ -801,6 +865,94 @@ async function saveShots() {
   closeModal();
   await loadProjects();
   render();
+}
+
+// ---------- Reel Deconstructor import ----------
+// Turn one raw reel.json shot (Reel Deconstructor's schema) into a ContentFlow shot.
+// Angle/movement get mapped to the closest ContentFlow dropdown option; shot size uses
+// the same wording in both tools so it passes straight through. Role tags import as-is —
+// SHOT_ROLES was deliberately defined to match Reel Deconstructor's own taxonomy.role.
+function rdShotToContentFlowShot(raw, idPrefix) {
+  const tags = raw.tags || {};
+  const size = SHOT_TYPES.includes(tags.size) ? tags.size : "";
+  const angle = RD_ANGLE_MAP[tags.angle] ?? "";
+  const move = RD_MOVE_MAP[tags.movement] ?? "";
+  const role = SHOT_ROLES.includes(tags.role) ? tags.role : "";
+  const note = (raw.note || "").trim() || (raw.dialogue || "").trim();
+  return {
+    id: `${idPrefix}_${raw.n ?? Math.random().toString(36).slice(2, 8)}`,
+    time: fmtTime(raw.start || 0),
+    type: size, angle, move, role,
+    note: note.length > 300 ? note.slice(0, 297) + "…" : note,
+  };
+}
+
+function mergeImportedShots(imported, statusLabel) {
+  if (!imported.length) { setImportStatus("Nothing to import — no shots found."); return; }
+  state._shotStudy.shots = state._shotStudy.shots.concat(imported);
+  state._shotStudy.shots.sort((a, b) => toSec(a.time) - toSec(b.time));
+  renderShotList();
+  setImportStatus(`Imported ${imported.length} shots ${statusLabel}. Review below, then Save breakdown.`);
+}
+
+function setImportStatus(msg) {
+  const el = document.getElementById("rdImportStatus");
+  if (el) el.textContent = msg;
+}
+
+async function importShotsFromZip(file) {
+  if (!file) return;
+  setImportStatus("Reading zip…");
+  try {
+    const buf = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    const entry = Object.keys(zip.files).find((name) => /(^|\/)reel\.json$/i.test(name));
+    if (!entry) { setImportStatus("Couldn't find reel.json inside that zip."); return; }
+    const json = JSON.parse(await zip.files[entry].async("string"));
+    const shots = Array.isArray(json.shots) ? json.shots : [];
+    const imported = shots.map((s) => rdShotToContentFlowShot(s, "rdzip"));
+    mergeImportedShots(imported, "from the zip");
+  } catch (e) {
+    setImportStatus("Couldn't read that zip: " + e.message);
+  } finally {
+    document.getElementById("rdZipUpload").value = "";
+  }
+}
+
+// PDF fallback: the storyboard PDF has no taxonomy tags (those live only in reel.json),
+// so this recovers timestamps + dialogue-as-note only — type/angle/movement/role are
+// left for the user to fill in by hand after import.
+async function importShotsFromPdf(file) {
+  if (!file) return;
+  setImportStatus("Reading PDF…");
+  try {
+    if (window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    let fullText = "";
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      fullText += content.items.map((it) => it.str).join(" ") + "\n";
+    }
+    // "SHOT 01   0:00.00 – 0:03.00 · 3.00s   <dialogue text until the next SHOT marker>"
+    const re = /SHOT\s+(\d+)\s+([\d:.]+)\s*–\s*[\d:.]+\s*·\s*[\d.]+s\s*(.*?)(?=SHOT\s+\d+\s+[\d:.]+\s*–|$)/gs;
+    const imported = [];
+    let m;
+    while ((m = re.exec(fullText))) {
+      const [, n, start, dialogue] = m;
+      const sec = start.split(":").reduce((acc, part) => acc * 60 + parseFloat(part), 0);
+      const note = dialogue.trim().replace(/\s+/g, " ");
+      imported.push({ id: `rdpdf_${n}`, time: fmtTime(sec), type: "", angle: "", move: "", role: "", note: note.length > 300 ? note.slice(0, 297) + "…" : note });
+    }
+    mergeImportedShots(imported, "from the PDF");
+  } catch (e) {
+    setImportStatus("Couldn't read that PDF: " + e.message);
+  } finally {
+    document.getElementById("rdPdfUpload").value = "";
+  }
 }
 
 
