@@ -195,10 +195,12 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(43,35,32,0.35);
-  display: flex; align-items: center; justify-content: center; z-index: 50;
+  display: flex; align-items: flex-start; justify-content: center; z-index: 50;
+  overflow-y: auto; padding: 40px 16px;
 }
 .modal { background: var(--card); border-radius: 14px; padding: 24px; width: 420px; max-width: 90vw; }
 .modal.modal-wide { width: 640px; }
+.modal.maximized { width: 94vw; max-width: 94vw; }
 .modal h3 { margin-top: 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 

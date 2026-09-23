@@ -665,15 +665,29 @@ function fmtTime(sec) {
 }
 
 function openShotStudy(projectId, inspId) {
+  state._shotStudy = { projectId, inspId, shots: JSON.parse(JSON.stringify(getProject(projectId).inspirations.find((i) => i.id === inspId).shots || [])), view: "timeline", maximized: false };
+  renderShotStudyModal();
+}
+
+// Rebuild the shot-breakdown modal from the current state._shotStudy — used both for the
+// initial open and for the maximize/restore toggle, so in-progress (not-yet-saved) shots
+// are never lost when the modal resizes.
+function renderShotStudyModal() {
+  const { projectId, inspId, maximized } = state._shotStudy;
   const project = state.projects.find((p) => p.id === projectId);
   const insp = project.inspirations.find((i) => i.id === inspId);
-  state._shotStudy = { projectId, inspId, shots: JSON.parse(JSON.stringify(insp.shots || [])), view: "timeline" };
   const insta = isInstagramUrl(insp.url);
 
   modalRoot.innerHTML = `
     <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
-      <div class="modal" style="max-width:760px;">
-        <h3>Shot breakdown</h3>
+      <div class="modal ${maximized ? "maximized" : ""}" style="max-width:${maximized ? "none" : "760px"};">
+        <div class="sticky-note-topbar">
+          <h3 style="margin:0;">Shot breakdown</h3>
+          <div class="sticky-note-tools">
+            <button type="button" title="${maximized ? "Restore" : "Open full page"}" onclick="toggleShotStudySize(${!maximized})">${maximized ? "⤡" : "⤢"}</button>
+            <button type="button" title="Close" onclick="closeModal()">✕</button>
+          </div>
+        </div>
         <p class="muted" style="margin-top:4px;font-size:12.5px;">
           ${insta ? "Instagram embed can't report exact time — type the timestamp as you watch." : ""}
           Study the reference and log each shot: when it happens, what type, and why it works.
@@ -759,7 +773,7 @@ function openShotStudy(projectId, inspId) {
               <button type="button" class="seg-btn ${state._shotStudy.view === "teaching" ? "active" : ""}" onclick="setShotStudyView('teaching')">Teaching breakdown</button>
             </div>
           </div>
-          <div id="shotList"></div>
+          <div id="shotList" style="${maximized ? "max-height:42vh;overflow-y:auto;" : ""}"></div>
         </div>
 
         <div class="modal-actions" style="margin-top:14px;">
@@ -769,6 +783,25 @@ function openShotStudy(projectId, inspId) {
       </div>
     </div>`;
   renderShotList();
+}
+
+// Switch the shot-study modal between compact and full-page. Any shot already captured
+// (in state._shotStudy.shots) survives automatically since we render from that state
+// object, not from the server — but a draft still sitting in the capture-form fields
+// (not yet "+ Capture this shot") would otherwise be wiped by the re-render, so it's
+// read out and restored after.
+function toggleShotStudySize(maximized) {
+  const draft = ["shotTime", "shotType", "shotAngle", "shotMove", "shotNote", "shotRole"].reduce((acc, id) => {
+    const el = document.getElementById(id);
+    acc[id] = el ? el.value : "";
+    return acc;
+  }, {});
+  state._shotStudy.maximized = maximized;
+  renderShotStudyModal();
+  Object.entries(draft).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  });
 }
 
 // convert an instagram url to its embeddable src
