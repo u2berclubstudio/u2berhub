@@ -55,6 +55,19 @@
   #frame > * { position: absolute; inset: 0; width: 100%; height: 100%; }
   #video { object-fit: cover; }
   #video.mirror, #ref.mirror { transform: scaleX(-1); }
+  #video, #bg { transform-origin: 50% 50%; }
+  .zoom-out { font-family: var(--hud); font-weight: 700; font-size: 15px; letter-spacing: .04em; min-width: 44px;
+    text-align: right; color: var(--accent); font-variant-numeric: tabular-nums; }
+  #zoom { flex: 1; min-width: 60px; accent-color: var(--accent); }
+  .scr-menu { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
+    display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: calc(100% - 24px);
+    background: rgba(11,12,14,.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--panel-2); border-radius: 14px; padding: 10px 12px; }
+  .scr-menu .t { font-family: var(--hud); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .scr-menu .row { display: flex; gap: 8px; }
+  .scr-menu .row button { font-family: var(--hud); font-weight: 600; font-size: 14px; letter-spacing: .06em; text-transform: uppercase;
+    padding: 7px 12px; border-radius: 9px; background: var(--panel-2); }
+  .scr-menu .row button.warn { color: var(--warn); }
   #ref { opacity: .45; pointer-events: none; }
   #ov { pointer-events: none; }
   #frame { cursor: crosshair; }
@@ -168,6 +181,13 @@
         <button class="mini" id="infoMin" aria-label="Minimise instructions">Minimise ▾</button>
       </div>
     </div>
+    <div class="scr-menu" id="scrMenu" hidden>
+      <div class="t">Camera screen shape</div>
+      <div class="seg" id="scrAspects" role="group" aria-label="Camera screen shape"></div>
+      <div class="row">
+        <button id="scrRedo">Re-mark</button><button id="scrDone">Done</button><button class="warn" id="scrOff">Remove</button>
+      </div>
+    </div>
     <button class="pill" id="infoPill" hidden aria-label="Show instructions"><span class="i">i</span><span id="pillName"></span></button>
     <div id="gate">
       <button class="primary" id="startBtn">Start camera</button>
@@ -177,6 +197,11 @@
 
   <div class="bottom">
     <div class="chips" id="chips" role="group" aria-label="Composition template"></div>
+    <div class="controls">
+      <label for="zoom">Zoom</label>
+      <input type="range" id="zoom" min="1" max="8" step="0.05" value="1">
+      <button class="zoom-out" id="zoomOut" title="Reset to 1x">1.0×</button>
+    </div>
     <div class="controls">
       <label for="opacity">Lines</label>
       <input type="range" id="opacity" min="15" max="100" value="70">
@@ -188,6 +213,9 @@
       </button>
       <button class="icon-btn" id="flipV" aria-pressed="false" title="Mirror top-bottom">
         <svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg>Flip ↕
+      </button>
+      <button class="icon-btn" id="scrBtn" aria-pressed="false" title="Lock the guide onto your camera's screen">
+        <svg viewBox="0 0 24 24"><path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3"/><rect x="8" y="9" width="8" height="6" rx="1"/></svg><span id="scrLabel">Screen</span>
       </button>
       <button class="icon-btn" id="refBtn" aria-pressed="false" title="Freeze a reference frame to re-match later">
         <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 15l4-4 4 4 3-3 5 5"/></svg><span id="refLabel">Ref</span>
@@ -221,7 +249,8 @@
 
   // ---------- state ----------
   const state = { aspect: '9:16', tpl: 'thirds', opacity: 70, color: COLORS[0],
-    flipH: false, flipV: false, level: false, facing: 'environment', fx: 0.5, fy: 0.42, infoMin: false };
+    flipH: false, flipV: false, level: false, facing: 'environment', fx: 0.5, fy: 0.42, infoMin: false,
+    zoom: 1, scr: null };
   try { Object.assign(state, JSON.parse(localStorage.getItem('frameguide') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('frameguide', JSON.stringify(state)); } catch (e) {} };
 
@@ -634,24 +663,20 @@
   // ---------- overlay render ----------
   let raf = 0;
   function render() { if (!raf) raf = requestAnimationFrame(paint); }
-  function paint() {
-    raf = 0;
-    const c = ov.getContext('2d');
-    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, ov.width, ov.height);
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const L = Math.max(1, Math.min(W, H) / 380);
+  function drawTpl(c, w, h) {
+    const L = Math.max(1, Math.min(w, h) / 380);
     const tpl = TEMPLATES.find(t => t.id === state.tpl) || TEMPLATES[0];
     c.save();
-    c.translate(W / 2, H / 2); c.scale(state.flipH ? -1 : 1, state.flipV ? -1 : 1); c.translate(-W / 2, -H / 2);
+    c.translate(w / 2, h / 2); c.scale(state.flipH ? -1 : 1, state.flipV ? -1 : 1); c.translate(-w / 2, -h / 2);
     c.globalAlpha = state.opacity / 100;
     c.strokeStyle = c.fillStyle = state.color; c.lineWidth = L;
     c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 2 * L;
     const labels = [];
     const K = {
       label: (x, y, text, align) => labels.push({ x, y, text, align }),
-      focus: () => [state.flipH ? W - state.fx * W : state.fx * W, state.flipV ? H - state.fy * H : state.fy * H]
+      focus: () => [state.flipH ? w - state.fx * w : state.fx * w, state.flipV ? h - state.fy * h : state.fy * h]
     };
-    tpl.draw(c, W, H, L, K);
+    tpl.draw(c, w, h, L, K);
     c.restore();
 
     if (labels.length) {  // text drawn un-mirrored, at the flipped position
@@ -660,12 +685,93 @@
       c.font = `600 ${Math.round(Math.max(11, 12 * L))}px "Barlow Condensed", "Arial Narrow", sans-serif`;
       c.textBaseline = 'middle';
       labels.forEach(({ x, y, text, align }) => {
-        const px = state.flipH ? W - x : x, py = state.flipV ? H - y : y;
+        const px = state.flipH ? w - x : x, py = state.flipV ? h - y : y;
         c.textAlign = !align ? 'center' : (state.flipH ? (align === 'left' ? 'right' : 'left') : align);
         c.fillText(text, px, py);
       });
       c.restore();
     }
+  }
+
+  // ---------- camera-screen lock (4 corners -> perspective warp) ----------
+  const SCR_ASPECTS = [{ id: 'Auto', r: 0 }, { id: '3:2', r: 3 / 2 }, { id: '4:3', r: 4 / 3 }, { id: '16:9', r: 16 / 9 }, { id: '9:16', r: 9 / 16 }];
+  let marking = null;            // array of [nx, ny] while tapping corners
+  const off = document.createElement('canvas');
+  function scrPts() { return state.scr ? state.scr.q.map(([x, y]) => [x * W, y * H]) : null; }
+  function orderQuad(p) {        // -> TL, TR, BR, BL
+    const cx = p.reduce((s, q) => s + q[0], 0) / 4, cy = p.reduce((s, q) => s + q[1], 0) / 4;
+    const s = p.slice().sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+    let k = 0; s.forEach((q, i) => { if (q[0] + q[1] < s[k][0] + s[k][1]) k = i; });
+    return s.slice(k).concat(s.slice(0, k));
+  }
+  function homog(q) {            // unit square -> quad (TL, TR, BR, BL)
+    const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+    const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+    let g = 0, h = 0;
+    if (Math.abs(sx) > 1e-9 || Math.abs(sy) > 1e-9) { const den = dx1 * dy2 - dx2 * dy1; g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den; }
+    return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h, 1];
+  }
+  function hmap(M, u, v) { const w = M[6] * u + M[7] * v + M[8]; return [(M[0] * u + M[1] * v + M[2]) / w, (M[3] * u + M[4] * v + M[5]) / w]; }
+  function hinv(m) {
+    const [a, b, c, d, e, f, g, h, i] = m, A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g, det = a * A + b * B + c * C;
+    return [A / det, -(b * i - c * h) / det, (b * f - c * e) / det, B / det, (a * i - c * g) / det, -(a * f - c * d) / det, C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
+  }
+  function tri(c, img, s0, s1, s2, d0, d1, d2) {
+    const cx = (d0[0] + d1[0] + d2[0]) / 3, cy = (d0[1] + d1[1] + d2[1]) / 3;
+    const ex = ([x, y]) => { const dx = x - cx, dy = y - cy, l = Math.hypot(dx, dy) || 1; return [x + dx / l * 0.7, y + dy / l * 0.7]; };
+    const du1 = s1[0] - s0[0], dv1 = s1[1] - s0[1], du2 = s2[0] - s0[0], dv2 = s2[1] - s0[1];
+    const dx1 = d1[0] - d0[0], dy1 = d1[1] - d0[1], dx2 = d2[0] - d0[0], dy2 = d2[1] - d0[1];
+    const det = du1 * dv2 - du2 * dv1; if (!det) return;
+    const A = (dx1 * dv2 - dx2 * dv1) / det, C = (dx2 * du1 - dx1 * du2) / det;
+    const B = (dy1 * dv2 - dy2 * dv1) / det, D = (dy2 * du1 - dy1 * du2) / det;
+    c.save(); c.beginPath(); c.moveTo(...ex(d0)); c.lineTo(...ex(d1)); c.lineTo(...ex(d2)); c.closePath(); c.clip();
+    c.transform(A, B, C, D, d0[0] - A * s0[0] - C * s0[1], d0[1] - B * s0[0] - D * s0[1]);
+    c.drawImage(img, 0, 0); c.restore();
+  }
+  function drawScreen(c, q, L) {
+    const len = (p, r) => Math.hypot(p[0] - r[0], p[1] - r[1]);
+    const qw = (len(q[0], q[1]) + len(q[3], q[2])) / 2, qh = (len(q[0], q[3]) + len(q[1], q[2])) / 2;
+    const a = (SCR_ASPECTS.find(s => s.id === state.scr.aspect) || SCR_ASPECTS[0]).r || qw / qh;
+    const vh = Math.max(40, qh), vw = vh * a;               // virtual screen size (css px)
+    off.width = Math.round(vw * dpr); off.height = Math.round(vh * dpr);
+    const oc = off.getContext('2d'); oc.setTransform(dpr, 0, 0, dpr, 0, 0); oc.clearRect(0, 0, vw, vh);
+    drawTpl(oc, vw, vh);
+    // dim everything outside the camera screen
+    c.save(); c.fillStyle = 'rgba(0,0,0,.38)'; c.beginPath(); c.rect(0, 0, W, H);
+    c.moveTo(...q[0]); c.lineTo(...q[3]); c.lineTo(...q[2]); c.lineTo(...q[1]); c.closePath(); c.fill(); c.restore();
+    const M = homog(q), N = 14;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const u0 = i / N, u1 = (i + 1) / N, v0 = j / N, v1 = (j + 1) / N;
+      const S = (u, v) => [u * off.width, v * off.height], P = (u, v) => hmap(M, u, v);
+      tri(c, off, S(u0, v0), S(u1, v0), S(u1, v1), P(u0, v0), P(u1, v0), P(u1, v1));
+      tri(c, off, S(u0, v0), S(u1, v1), S(u0, v1), P(u0, v0), P(u1, v1), P(u0, v1));
+    }
+    c.save(); c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = L; c.setLineDash([L * 4, L * 3]);
+    c.beginPath(); q.forEach((p, i) => i ? c.lineTo(...p) : c.moveTo(...p)); c.closePath(); c.stroke();
+    c.setLineDash([]); c.fillStyle = state.color; c.strokeStyle = 'rgba(0,0,0,.6)';
+    q.forEach(p => { c.beginPath(); c.arc(p[0], p[1], L * 5, 0, Math.PI * 2); c.fill(); c.stroke(); });
+    c.restore();
+  }
+  function drawMarking(c, L) {
+    const p = marking.map(([x, y]) => [x * W, y * H]);
+    c.save(); c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, 0, W, H);
+    c.strokeStyle = c.fillStyle = state.color; c.lineWidth = L * 1.5;
+    c.shadowColor = 'rgba(0,0,0,.7)'; c.shadowBlur = 3 * L;
+    if (p.length > 1) { c.beginPath(); p.forEach((q, i) => i ? c.lineTo(...q) : c.moveTo(...q)); c.stroke(); }
+    p.forEach(q => { c.beginPath(); c.arc(q[0], q[1], L * 6, 0, Math.PI * 2); c.fill(); });
+    c.restore();
+  }
+
+  function paint() {
+    raf = 0;
+    const c = ov.getContext('2d');
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, ov.width, ov.height);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const L = Math.max(1, Math.min(W, H) / 380);
+    const q = scrPts();
+    if (marking) drawMarking(c, L);
+    else if (q) drawScreen(c, q, L);
+    else drawTpl(c, W, H);
 
     if (state.level && tilt !== null) {
       const ok = Math.abs(tilt) < 0.5, col = ok ? '#34d17a' : '#ff5a4f';
@@ -684,7 +790,7 @@
   const aspectsEl = $('aspects'), chipsEl = $('chips'), swEl = $('swatches');
   ASPECTS.forEach(a => {
     const b = document.createElement('button'); b.textContent = a.id; b.dataset.id = a.id;
-    b.onclick = () => { state.aspect = a.id; save(); syncUI(); layout(); if (hasRef) clearRef(); };
+    b.onclick = () => { state.aspect = a.id; if (state.scr || marking) { state.scr = null; marking = null; hint(''); } save(); syncUI(); layout(); if (hasRef) clearRef(); };
     aspectsEl.appendChild(b);
   });
   TEMPLATES.forEach(t => {
@@ -763,8 +869,38 @@
 
   // swipe on the frame to change template
   let sx = null, sy = null;
-  stage.addEventListener('touchstart', e => { if (!$('sheetBack').hidden) return; sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  let pinch = null, drag = -1;
+  function framePt(t) { const r = frame.getBoundingClientRect(); return [t.clientX - r.left, t.clientY - r.top]; }
+  stage.addEventListener('touchstart', e => {
+    if (!$('sheetBack').hidden) return;
+    if (e.touches.length === 2) {           // pinch to zoom
+      const [a, b] = e.touches; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: state.zoom };
+      sx = null; drag = -1; return;
+    }
+    if (pinch) return;
+    const q = !marking && scrPts();
+    if (q && e.target.closest('#frame')) {  // grab a corner handle to fine-tune it
+      const [px, py] = framePt(e.touches[0]);
+      let best = -1, bd = 34; q.forEach((p, i) => { const d = Math.hypot(p[0] - px, p[1] - py); if (d < bd) { bd = d; best = i; } });
+      if (best >= 0) { drag = best; sx = null; return; }
+    }
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  stage.addEventListener('touchmove', e => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      const [a, b] = e.touches; setZoom(pinch.z * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / pinch.d);
+    } else if (drag >= 0) {
+      e.preventDefault();
+      const [px, py] = framePt(e.touches[0]);
+      state.scr.q[drag] = [Math.min(1, Math.max(0, px / W)), Math.min(1, Math.max(0, py / H))];
+      render();
+    }
+  }, { passive: false });
+  document.addEventListener('gesturestart', e => e.preventDefault());
   stage.addEventListener('touchend', e => {
+    if (pinch) { if (e.touches.length === 0) { pinch = null; swipedAt = Date.now(); } return; }
+    if (drag >= 0) { state.scr.q = orderQuad(state.scr.q); drag = -1; save(); swipedAt = Date.now(); render(); return; }
     if (sx === null) return;
     const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
     if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) { stepTpl(dx < 0 ? 1 : -1); swipedAt = Date.now(); }
@@ -774,12 +910,68 @@
   let swipedAt = 0;
   frame.addEventListener('click', e => {
     if (Date.now() - swipedAt < 400) return;
-    const tpl = TEMPLATES.find(t => t.id === state.tpl); if (!tpl || !tpl.focus) return;
     const r = frame.getBoundingClientRect();
-    state.fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    state.fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    let nx = (e.clientX - r.left) / r.width, ny = (e.clientY - r.top) / r.height;
+    if (marking) {
+      marking.push([nx, ny]);
+      if (marking.length < 4) hint(`Tap corner ${marking.length + 1} of 4`);
+      else { state.scr = { q: orderQuad(marking), aspect: (state.scr && state.scr.aspect) || 'Auto' }; marking = null;
+        hint(''); save(); syncScr(); toast('Locked to screen'); }
+      render(); return;
+    }
+    const tpl = TEMPLATES.find(t => t.id === state.tpl); if (!tpl || !tpl.focus) return;
+    const q = scrPts();
+    if (q) [nx, ny] = hmap(hinv(homog(q)), nx * W, ny * H);   // tap -> position inside the camera screen
+    state.fx = Math.min(1, Math.max(0, nx));
+    state.fy = Math.min(1, Math.max(0, ny));
     save(); render();
   });
+
+  // ---------- screen-lock controls ----------
+  function hint(msg) { const t = $('toast'); clearTimeout(toastT); t.textContent = msg; t.style.opacity = msg ? 1 : 0; }
+  function startMarking() { marking = []; $('scrMenu').hidden = true; hint('Tap the 4 corners of your camera screen · 1 of 4'); syncScr(); render(); }
+  function syncScr() {
+    pressed($('scrBtn'), !!state.scr || !!marking);
+    $('scrLabel').textContent = marking ? 'Cancel' : 'Screen';
+    $('scrAspects').querySelectorAll('button').forEach(b => pressed(b, state.scr && b.dataset.id === state.scr.aspect));
+  }
+  SCR_ASPECTS.forEach(s => {
+    const b = document.createElement('button'); b.textContent = s.id; b.dataset.id = s.id;
+    b.onclick = () => { if (!state.scr) return; state.scr.aspect = s.id; save(); syncScr(); render(); };
+    $('scrAspects').appendChild(b);
+  });
+  $('scrBtn').onclick = () => {
+    if (marking) { marking = null; hint(''); syncScr(); render(); return; }
+    if (!state.scr) { startMarking(); return; }
+    $('scrMenu').hidden = !$('scrMenu').hidden;
+  };
+  $('scrRedo').onclick = startMarking;
+  $('scrDone').onclick = () => { $('scrMenu').hidden = true; };
+  $('scrOff').onclick = () => { state.scr = null; $('scrMenu').hidden = true; save(); syncScr(); render(); toast('Screen lock removed'); };
+
+  // ---------- zoom (camera zoom when the phone allows it, digital zoom beyond that) ----------
+  let hwZoom = null, digital = 1;
+  function applyZoom() {
+    let hw = 1;
+    const track = stream && stream.getVideoTracks()[0];
+    if (hwZoom && track) {
+      hw = Math.min(hwZoom.max, Math.max(hwZoom.min, state.zoom));
+      track.applyConstraints({ advanced: [{ zoom: hw }] }).catch(() => {});
+    }
+    digital = state.zoom / hw;
+    const mir = state.facing === 'user' ? 'scaleX(-1) ' : '';
+    video.style.transform = `${mir}scale(${digital})`;
+    bg.style.transform = stream ? '' : `scale(${state.zoom})`;
+    $('zoom').value = state.zoom; $('zoomOut').textContent = state.zoom.toFixed(1) + '×';
+  }
+  function setZoom(z) {
+    z = Math.min(8, Math.max(1, Math.round(z * 20) / 20));
+    const k = z / state.zoom; if (k === 1) return;
+    if (state.scr) state.scr.q = state.scr.q.map(([x, y]) => [0.5 + (x - 0.5) * k, 0.5 + (y - 0.5) * k]); // screen moves with the zoom
+    state.zoom = z; save(); applyZoom(); render();
+  }
+  $('zoom').oninput = (e) => setZoom(+e.target.value);
+  $('zoomOut').onclick = () => setZoom(1);
   window.addEventListener('keydown', e => { if (e.key === 'ArrowRight') stepTpl(1); if (e.key === 'ArrowLeft') stepTpl(-1); });
 
   // ---------- camera ----------
@@ -802,6 +994,9 @@
         video: { facingMode: { ideal: state.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
       video.srcObject = stream; video.hidden = false;
       video.classList.toggle('mirror', state.facing === 'user');
+      const tr = stream.getVideoTracks()[0], caps = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+      hwZoom = caps && caps.zoom && caps.zoom.max > 1 ? caps.zoom : null;
+      applyZoom();
       await video.play().catch(() => {});
       $('gate').hidden = true; keepAwake();
     } catch (err) {
@@ -824,6 +1019,7 @@
       const vr = video.videoWidth / video.videoHeight, fr = W / H;
       let sw = video.videoWidth, sh = video.videoHeight, sx0 = 0, sy0 = 0;
       if (vr > fr) { sw = sh * fr; sx0 = (video.videoWidth - sw) / 2; } else { sh = sw / fr; sy0 = (video.videoHeight - sh) / 2; }
+      sx0 += sw * (1 - 1 / digital) / 2; sy0 += sh * (1 - 1 / digital) / 2; sw /= digital; sh /= digital;
       c.drawImage(video, sx0, sy0, sw, sh, 0, 0, ref.width, ref.height);
       ref.classList.toggle('mirror', state.facing === 'user');
     } else {
@@ -865,7 +1061,7 @@
   // ---------- boot ----------
   new ResizeObserver(layout).observe(stage);
   window.addEventListener('orientationchange', () => setTimeout(layout, 250));
-  syncUI(); syncInfo(); layout();
+  syncUI(); syncInfo(); syncScr(); applyZoom(); layout();
 })();
 </script>
 </body>
