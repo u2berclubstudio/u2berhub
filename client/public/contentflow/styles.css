@@ -268,6 +268,11 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
 /* clickable captured-shot cards */
 .shot-ref-card:hover { border-color: var(--amber) !important; box-shadow: 0 2px 6px rgba(232,133,43,.12); }
 
+/* Global content search */
+.search-result { padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; cursor: pointer; }
+.search-result:hover { border-color: var(--amber); background: var(--amber-light,#FDF3E7); }
+.search-result mark { background: #FDE7B0; color: inherit; border-radius: 2px; padding: 0 1px; }
+
 /* Shot breakdown: Timeline / Teaching breakdown toggle */
 .seg-btn { border: none; background: #fff; padding: 4px 10px; font-size: 11.5px; cursor: pointer; color: var(--ink-soft); font-family: inherit; }
 .seg-btn + .seg-btn { border-left: 1px solid var(--border); }

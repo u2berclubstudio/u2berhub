@@ -92,6 +92,7 @@ function renderBoard() {
         ${brands.map((b) => `<option value="${escapeAttr(b)}">${escapeHtml(b)}</option>`).join("")}
       </select>
       <button class="btn btn-sm" onclick="clearBoardFilters()">Clear</button>
+      <button class="btn btn-sm" onclick="openGlobalSearch()" style="margin-left:auto;">🔍 Search everything</button>
     </div>
     <div id="boardColumns" class="board-columns"></div>
   `;
@@ -142,6 +143,127 @@ function renderBoardColumns() {
 function pipelineDots(stage) {
   const idx = STAGES.indexOf(stage);
   return `<div class="pipeline-progress">${STAGES.map((s, i) => `<div class="pip-dot ${i <= idx ? "done" : ""}"></div>`).join("")}</div>`;
+}
+
+// ---------- Global content search ----------
+// Flatten every text field worth searching, across every project and every stage,
+// into one list of {projectId, projectTitle, section, sectionLabel, text, jump}.
+// jump describes how to get there: which tab to open, and (for ideas/scripts) which
+// specific item to land on once there.
+function buildSearchIndex() {
+  const entries = [];
+  const add = (p, section, sectionLabel, text, jump) => {
+    const t = (text || "").toString().trim();
+    if (t) entries.push({ projectId: p.id, projectTitle: p.title, brand: p.brand, section, sectionLabel, text: t, jump });
+  };
+
+  state.projects.forEach((p) => {
+    // Idea
+    (p.ideas || []).forEach((idea) => {
+      add(p, "idea", "Idea", idea.text, { tab: "idea", ideaId: idea.id });
+      const cols = p.ideaColumns || [];
+      Object.entries(idea.customValues || {}).forEach(([colId, val]) => {
+        const col = cols.find((c) => c.id === colId);
+        add(p, "idea", `Idea · ${col ? col.name : "column"}`, val, { tab: "idea", ideaId: idea.id });
+      });
+    });
+    // Inspiration
+    (p.inspirations || []).forEach((insp) => {
+      add(p, "inspiration", "Inspiration", insp.note, { tab: "inspiration" });
+      add(p, "inspiration", "Inspiration · URL", insp.url, { tab: "inspiration" });
+      (insp.reasons || []).forEach((r) => add(p, "inspiration", "Inspiration · why saved", r, { tab: "inspiration" }));
+      (insp.shots || []).forEach((s) => add(p, "inspiration", "Inspiration · shot note", s.note, { tab: "inspiration" }));
+    });
+    // Script
+    (p.scripts || []).forEach((sc) => {
+      add(p, "script", `Script · ${sc.title}`, sc.title, { tab: "script", scriptId: sc.id });
+      (sc.hooks || []).forEach((h) => {
+        add(p, "script", `Script · ${sc.title} · hook`, h.text, { tab: "script", scriptId: sc.id });
+        add(p, "script", `Script · ${sc.title} · hook notes`, h.notes, { tab: "script", scriptId: sc.id });
+      });
+      (sc.blocks || []).forEach((b) => {
+        add(p, "script", `Script · ${sc.title} · shot ${b.order || ""}`, b.dialogue, { tab: "script", scriptId: sc.id });
+        add(p, "script", `Script · ${sc.title} · shot ${b.order || ""} notes`, b.props, { tab: "script", scriptId: sc.id });
+        add(p, "script", `Script · ${sc.title} · on-screen text`, b.onScreenText, { tab: "script", scriptId: sc.id });
+      });
+    });
+    // Shoot
+    add(p, "shoot", "Shoot · notes", (p.shoot || {}).generalNotes, { tab: "shoot" });
+    add(p, "shoot", "Shoot · location", (p.shoot || {}).location, { tab: "shoot" });
+    ((p.shoot || {}).shots || []).forEach((s) => add(p, "shoot", "Shoot · take notes", s.takeNotes, { tab: "shoot" }));
+    // Edit
+    add(p, "edit", "Edit · pacing notes", (p.edit || {}).pacingNotes, { tab: "edit" });
+    add(p, "edit", "Edit · music notes", (p.edit || {}).musicNotes, { tab: "edit" });
+    ((p.edit || {}).checklist || []).forEach((c) => add(p, "edit", "Edit · checklist", c.item, { tab: "edit" }));
+    // Post
+    add(p, "post", "Post · notes", (p.post || {}).notes, { tab: "post" });
+  });
+  return entries;
+}
+
+function openGlobalSearch() {
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal modal-wide">
+        <h3>Search everything</h3>
+        <p class="muted" style="margin-top:4px;font-size:12.5px;">Searches every project's Idea, Inspiration, Script, Shoot, Edit and Post text.</p>
+        <input type="text" id="globalSearchInput" placeholder="Type a word…" style="width:100%;margin-top:10px;" oninput="runGlobalSearch()" />
+        <div id="globalSearchResults" style="margin-top:14px;max-height:55vh;overflow-y:auto;"></div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("globalSearchInput").focus();
+  runGlobalSearch();
+}
+
+function highlightSnippet(text, query) {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return escapeHtml(text.length > 140 ? text.slice(0, 140) + "…" : text);
+  const pad = 50;
+  const start = Math.max(0, idx - pad);
+  const end = Math.min(text.length, idx + query.length + pad);
+  const before = escapeHtml((start > 0 ? "…" : "") + text.slice(start, idx));
+  const match = escapeHtml(text.slice(idx, idx + query.length));
+  const after = escapeHtml(text.slice(idx + query.length, end) + (end < text.length ? "…" : ""));
+  return `${before}<mark>${match}</mark>${after}`;
+}
+
+function runGlobalSearch() {
+  const query = (document.getElementById("globalSearchInput").value || "").trim();
+  const host = document.getElementById("globalSearchResults");
+  if (!query) { host.innerHTML = `<div class="muted" style="font-size:12.5px;padding:6px 0;">Start typing to search across every project.</div>`; return; }
+
+  const q = query.toLowerCase();
+  const matches = buildSearchIndex().filter((e) => e.text.toLowerCase().includes(q));
+  state._searchResults = matches;
+
+  if (!matches.length) { host.innerHTML = `<div class="muted" style="font-size:12.5px;padding:6px 0;">No matches for "${escapeHtml(query)}".</div>`; return; }
+
+  host.innerHTML = matches.map((m, i) => `
+    <div class="search-result" onclick="jumpToSearchResult(${i})">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <b style="font-size:13px;">${escapeHtml(m.projectTitle)}</b>
+        ${m.brand ? `<span class="muted" style="font-size:11px;">${escapeHtml(m.brand)}</span>` : ""}
+        <span class="tag" style="margin-left:auto;">${escapeHtml(m.sectionLabel)}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${highlightSnippet(m.text, query)}</div>
+    </div>`).join("");
+}
+
+// goProject() itself doesn't await its internal render(), so a setTimeout after it can't
+// reliably know the detail page has actually loaded — set state directly and await render()
+// here instead, then it's safe to layer the idea modal on top.
+async function jumpToSearchResult(i) {
+  const m = state._searchResults[i];
+  if (!m) return;
+  closeModal();
+  if (m.jump.scriptId) state.openScriptId = m.jump.scriptId;
+  state.currentProjectId = m.projectId;
+  state.activeTab = m.jump.tab;
+  await render();
+  if (m.jump.ideaId) openIdeaNote(m.projectId, m.jump.ideaId);
 }
 
 // ---------- Detail ----------
