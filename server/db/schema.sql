@@ -173,3 +173,20 @@ CREATE TABLE IF NOT EXISTS teardowns (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_teardowns_user ON teardowns(user_id, created_at DESC);
+
+-- ============ CONTENTFLOW: per-project sharing ============
+-- A project lives inside its owner's tool_data JSON blob (see contentflow.js). This table
+-- is the cross-user index that makes a project visible to someone who ISN'T the owner:
+-- one row per (project, person it's shared with). The shared-with person must already have
+-- an active u2berhub account with ContentFlow access — this never invites a new signup.
+CREATE TABLE IF NOT EXISTS contentflow_shares (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL,
+  owner_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shared_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL DEFAULT 'editor',   -- 'strategist' | 'videographer' | 'editor'
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, shared_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_contentflow_shares_shared_user ON contentflow_shares(shared_user_id);
+CREATE INDEX IF NOT EXISTS idx_contentflow_shares_owner ON contentflow_shares(owner_id, project_id);

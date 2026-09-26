@@ -6,7 +6,7 @@ import PDFDocument from "pdfkit";
 import path from "path";
 import { fileURLToPath } from "url";
 import { q } from "./db/index.js";
-import { auth } from "./auth.js";
+import { auth, canUseTool } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -76,25 +76,140 @@ export async function saveProjects(userId, projects) {
 const router = express.Router();
 router.use(auth(true)); // every route requires an active, signed-in user
 
-// helper: run a mutation against this user's projects and persist
-async function withProject(req, res, fn) {
-  const uidUser = req.user.id;
-  const projects = await loadProjects(uidUser);
-  const project = projects.find((p) => p.id === req.params.id);
-  if (!project) return res.status(404).json({ error: "Not found" });
-  const result = await fn(project, projects);
-  await saveProjects(uidUser, projects);
-  res.json(result);
+/* ================= Sharing / per-project access =================
+   A project's data always lives in its OWNER's tool_data blob (see loadProjects/
+   saveProjects above). contentflow_shares is the cross-user index that lets someone
+   who ISN'T the owner see and (within their role) edit it. Mirrors EDIT_PERMISSIONS
+   from the client so the server enforces the same rule, not just the UI. */
+const EDIT_PERMISSIONS = {
+  strategist: ["channel", "idea", "inspiration", "script", "shoot", "edit", "post"],
+  videographer: ["shoot"],
+  editor: ["edit"],
+};
+
+// Which stage a given route touches, inferred from its path pattern — so ~30 mutation
+// routes don't each need to be individually tagged. Unmapped routes fall back to
+// owner-only (see withProject) rather than silently allowing a shared collaborator in.
+function deriveStage(routePath) {
+  if (/^\/projects\/:id\/(canvas|inspirations)/.test(routePath)) return "inspiration";
+  if (/^\/projects\/:id\/(hooks|blocks|scripts)/.test(routePath)) return "script";
+  if (/^\/projects\/:id\/(shots|shoot-meta|shoot-script)/.test(routePath)) return "shoot";
+  if (/^\/projects\/:id\/(edit-meta|edit-checklist)/.test(routePath)) return "edit";
+  if (/^\/projects\/:id\/(ideas?|idea-columns)/.test(routePath)) return "idea";
+  if (/^\/projects\/:id\/post/.test(routePath)) return "post";
+  if (/^\/projects\/:id\/channel/.test(routePath)) return "channel";
+  return null;
+}
+
+// Find a project by id, whether the signed-in user owns it or it was shared with them.
+// Returns null if neither — a caller-agnostic 404.
+async function resolveProjectAccess(req) {
+  const ownProjects = await loadProjects(req.user.id);
+  const ownProject = ownProjects.find((p) => p.id === req.params.id);
+  if (ownProject) return { project: ownProject, projects: ownProjects, ownerId: req.user.id, role: "strategist", isOwner: true };
+
+  const { rows } = await q(
+    `SELECT s.role, s.owner_id, u.email AS owner_email FROM contentflow_shares s
+     JOIN users u ON u.id = s.owner_id
+     WHERE s.project_id=$1 AND s.shared_user_id=$2`, [req.params.id, req.user.id]);
+  if (!rows.length) return null;
+  const share = rows[0];
+  const ownerProjects = await loadProjects(share.owner_id);
+  const project = ownerProjects.find((p) => p.id === req.params.id);
+  if (!project) return null;
+  return { project, projects: ownerProjects, ownerId: share.owner_id, role: share.role, isOwner: false, ownerEmail: share.owner_email };
+}
+
+// helper: run a mutation against this project's data (own or shared-in) and persist.
+// stageOverride: pass a STAGES value to check permission against that instead of the
+// path-derived one (used where the stage isn't in the URL, e.g. stage-date's body), or
+// "__owner__" to require true ownership regardless of role (rename, delete, sharing).
+async function withProject(req, res, fn, stageOverride) {
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  const { project, projects, ownerId, role, isOwner } = access;
+
+  if (stageOverride === "__owner__") {
+    if (!isOwner) return res.status(403).json({ error: "Only the project owner can do that." });
+  } else if (!isOwner) {
+    const requiredStage = stageOverride || deriveStage(req.route.path);
+    if (!requiredStage || !EDIT_PERMISSIONS[role].includes(requiredStage)) {
+      return res.status(403).json({ error: `Your role (${role}) doesn't have edit access here.` });
+    }
+  }
+
+  try {
+    const result = await fn(project, projects);
+    await saveProjects(ownerId, projects);
+    res.json(result);
+  } catch (e) {
+    if (e && e.code) return res.status(e.code).json({ error: e.message });
+    res.status(500).json({ error: "Something went wrong." });
+  }
 }
 
 // ---- Projects ----
-router.get("/projects", async (req, res) => res.json(await loadProjects(req.user.id)));
+router.get("/projects", async (req, res) => {
+  const own = await loadProjects(req.user.id);
+  const { rows: shares } = await q(
+    `SELECT s.project_id, s.role, s.owner_id, u.email AS owner_email FROM contentflow_shares s
+     JOIN users u ON u.id = s.owner_id WHERE s.shared_user_id=$1`, [req.user.id]);
+  const byOwner = {};
+  shares.forEach((s) => { (byOwner[s.owner_id] = byOwner[s.owner_id] || []).push(s); });
+  const shared = [];
+  for (const ownerId of Object.keys(byOwner)) {
+    const ownerProjects = await loadProjects(Number(ownerId));
+    byOwner[ownerId].forEach((s) => {
+      const p = ownerProjects.find((x) => x.id === s.project_id);
+      if (p) shared.push({ ...p, _shared: { role: s.role, ownerEmail: s.owner_email } });
+    });
+  }
+  res.json([...own, ...shared]);
+});
 
 router.get("/projects/:id", async (req, res) => {
-  const projects = await loadProjects(req.user.id);
-  const p = projects.find((x) => x.id === req.params.id);
-  if (!p) return res.status(404).json({ error: "Not found" });
-  res.json(p);
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  res.json(access.isOwner ? access.project : { ...access.project, _shared: { role: access.role, ownerEmail: access.ownerEmail } });
+});
+
+// ---- Sharing (owner only) ----
+router.get("/projects/:id/shares", async (req, res) => {
+  const own = await loadProjects(req.user.id);
+  if (!own.find((p) => p.id === req.params.id)) return res.status(404).json({ error: "Not found" });
+  const { rows } = await q(
+    `SELECT s.id, s.role, u.email FROM contentflow_shares s JOIN users u ON u.id = s.shared_user_id
+     WHERE s.project_id=$1 AND s.owner_id=$2 ORDER BY s.created_at`, [req.params.id, req.user.id]);
+  res.json({ shares: rows });
+});
+
+router.post("/projects/:id/shares", async (req, res) => {
+  const own = await loadProjects(req.user.id);
+  if (!own.find((p) => p.id === req.params.id)) return res.status(404).json({ error: "Not found" });
+
+  const email = clean(req.body.email, 200).toLowerCase();
+  const role = ["strategist", "videographer", "editor"].includes(req.body.role) ? req.body.role : "editor";
+  if (!email) return res.status(400).json({ error: "Enter an email." });
+
+  const { rows: users } = await q("SELECT * FROM users WHERE email=$1", [email]);
+  const target = users[0];
+  if (!target) return res.status(400).json({ error: "No u2berhub account with that email." });
+  if (target.status !== "active") return res.status(400).json({ error: "That account isn't active yet — it needs admin approval first." });
+  if (target.id === req.user.id) return res.status(400).json({ error: "That's your own account." });
+  if (!canUseTool(target, "contentflow")) return res.status(400).json({ error: "That account doesn't have ContentFlow access yet — an admin needs to grant it first." });
+
+  const id = uid("share");
+  await q(
+    `INSERT INTO contentflow_shares (id, project_id, owner_id, shared_user_id, role) VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (project_id, shared_user_id) DO UPDATE SET role=EXCLUDED.role`,
+    [id, req.params.id, req.user.id, target.id, role]);
+  res.json({ ok: true, email: target.email, role });
+});
+
+router.delete("/projects/:id/shares/:shareId", async (req, res) => {
+  await q("DELETE FROM contentflow_shares WHERE id=$1 AND project_id=$2 AND owner_id=$3",
+    [req.params.shareId, req.params.id, req.user.id]);
+  res.json({ ok: true });
 });
 
 router.post("/projects", async (req, res) => {
@@ -122,12 +237,16 @@ router.post("/projects", async (req, res) => {
   res.json(project);
 });
 
-router.patch("/projects/:id", (req, res) => withProject(req, res, (project) => { Object.assign(project, req.body); return project; }));
+// Project metadata (title, brand, stage, color) is owner-only — a shared collaborator
+// edits the project's CONTENT within their role, not its identity or who else can see it.
+router.patch("/projects/:id", (req, res) => withProject(req, res, (project) => { Object.assign(project, req.body); return project; }, "__owner__"));
 
 router.delete("/projects/:id", async (req, res) => {
   let projects = await loadProjects(req.user.id);
+  if (!projects.find((p) => p.id === req.params.id)) return res.status(404).json({ error: "Not found" });
   projects = projects.filter((p) => p.id !== req.params.id);
   await saveProjects(req.user.id, projects);
+  await q("DELETE FROM contentflow_shares WHERE project_id=$1 AND owner_id=$2", [req.params.id, req.user.id]);
   res.json({ ok: true });
 });
 
@@ -143,9 +262,14 @@ router.patch("/projects/:id/canvas", (req, res) => withProject(req, res, (projec
 }));
 
 // Upload one screenshot (base64). Returns an imageId the canvas frame points at.
+// Images are always stored under the PROJECT OWNER's id (not the uploader's) so a shared
+// collaborator's uploads stay visible to everyone else with access, the same as the owner's.
 router.post("/projects/:id/canvas/images", async (req, res) => {
-  const projects = await loadProjects(req.user.id);
-  if (!projects.find((p) => p.id === req.params.id)) return res.status(404).json({ error: "Not found" });
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  if (!access.isOwner && !EDIT_PERMISSIONS[access.role].includes("inspiration")) {
+    return res.status(403).json({ error: `Your role (${access.role}) doesn't have edit access here.` });
+  }
   const b64 = String(req.body.data || "").replace(/^data:[^;]+;base64,/, "");
   if (!b64) return res.status(400).json({ error: "No image data." });
   const buf = Buffer.from(b64, "base64");
@@ -153,23 +277,36 @@ router.post("/projects/:id/canvas/images", async (req, res) => {
   const id = "img_" + Math.random().toString(36).slice(2, 11);
   const mime = (req.body.mime || "image/jpeg").slice(0, 40);
   await q("INSERT INTO canvas_images (id,user_id,project_id,mime,data) VALUES ($1,$2,$3,$4,$5)",
-    [id, req.user.id, req.params.id, mime, buf]);
+    [id, access.ownerId, req.params.id, mime, buf]);
   res.json({ id });
 });
 
-// Serve an image by id — only to its owner.
+// Serve an image by id — to its owner, or to anyone the project is shared with (viewing
+// doesn't require edit rights to any particular stage).
 router.get("/images/:imgId", async (req, res) => {
-  const { rows } = await q("SELECT mime, data FROM canvas_images WHERE id=$1 AND user_id=$2",
-    [req.params.imgId, req.user.id]);
+  const { rows } = await q("SELECT mime, data, user_id, project_id FROM canvas_images WHERE id=$1", [req.params.imgId]);
   if (!rows.length) return res.status(404).end();
-  res.set("Content-Type", rows[0].mime);
+  const img = rows[0];
+  let allowed = img.user_id === req.user.id;
+  if (!allowed) {
+    const { rows: shareRows } = await q(
+      "SELECT 1 FROM contentflow_shares WHERE project_id=$1 AND shared_user_id=$2", [img.project_id, req.user.id]);
+    allowed = shareRows.length > 0;
+  }
+  if (!allowed) return res.status(404).end();
+  res.set("Content-Type", img.mime);
   res.set("Cache-Control", "private, max-age=86400");
-  res.send(rows[0].data);
+  res.send(img.data);
 });
 
 router.delete("/projects/:id/canvas/images/:imgId", async (req, res) => {
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  if (!access.isOwner && !EDIT_PERMISSIONS[access.role].includes("inspiration")) {
+    return res.status(403).json({ error: `Your role (${access.role}) doesn't have edit access here.` });
+  }
   await q("DELETE FROM canvas_images WHERE id=$1 AND user_id=$2 AND project_id=$3",
-    [req.params.imgId, req.user.id, req.params.id]);
+    [req.params.imgId, access.ownerId, req.params.id]);
   res.json({ ok: true });
 });
 
@@ -263,6 +400,8 @@ router.patch("/projects/:id/idea", (req, res) => withProject(req, res, (project)
 }));
 
 // Manually set/edit the date a stage was worked on.
+// stage-date's own stage is in the body, not the URL, so it's passed explicitly as the
+// permission override — a videographer can log when Shoot started, not any other stage.
 router.patch("/projects/:id/stage-date", (req, res) => withProject(req, res, (project) => {
   const { stage, date } = req.body;
   const valid = ["channel", "idea", "inspiration", "script", "shoot", "edit", "post"];
@@ -270,7 +409,7 @@ router.patch("/projects/:id/stage-date", (req, res) => withProject(req, res, (pr
   project.stageDates = project.stageDates || {};
   project.stageDates[stage] = date || "";
   return project.stageDates;
-}));
+}, req.body.stage));
 
 // Post / results stage: analytics + retention screenshot reference.
 router.patch("/projects/:id/post", (req, res) => withProject(req, res, (project) => {
@@ -281,19 +420,21 @@ router.patch("/projects/:id/post", (req, res) => withProject(req, res, (project)
 
 // Upload the retention screenshot for the Post stage (reuses canvas_images storage).
 router.post("/projects/:id/post/screenshot", async (req, res) => {
-  const projects = await loadProjects(req.user.id);
-  const project = projects.find((p) => p.id === req.params.id);
-  if (!project) return res.status(404).json({ error: "Not found" });
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  if (!access.isOwner && !EDIT_PERMISSIONS[access.role].includes("post")) {
+    return res.status(403).json({ error: `Your role (${access.role}) doesn't have edit access here.` });
+  }
   const b64 = String(req.body.data || "").replace(/^data:[^;]+;base64,/, "");
   if (!b64) return res.status(400).json({ error: "No image data." });
   const buf = Buffer.from(b64, "base64");
   if (buf.length > 5 * 1024 * 1024) return res.status(413).json({ error: "Image too large (max 5MB)." });
   const id = "img_" + Math.random().toString(36).slice(2, 11);
   await q("INSERT INTO canvas_images (id,user_id,project_id,mime,data) VALUES ($1,$2,$3,$4,$5)",
-    [id, req.user.id, req.params.id, req.body.mime || "image/jpeg", buf]);
-  project.post = project.post || {};
-  project.post.retentionShotId = id;
-  await saveProjects(req.user.id, projects);
+    [id, access.ownerId, req.params.id, req.body.mime || "image/jpeg", buf]);
+  access.project.post = access.project.post || {};
+  access.project.post.retentionShotId = id;
+  await saveProjects(access.ownerId, access.projects);
   res.json({ id });
 });
 
@@ -1051,21 +1192,23 @@ function buildProjectPDF(doc, project, channels, ideaCategories, canvasImages) {
   }
 }
 
+// PDF export is a read action — available to anyone with project access (owner or
+// shared, any role), same as viewing any read-only tab.
 router.get("/projects/:id/pdf", async (req, res) => {
-  const projects = await loadProjects(req.user.id);
-  const project = projects.find((p) => p.id === req.params.id);
-  if (!project) return res.status(404).json({ error: "Not found" });
+  const access = await resolveProjectAccess(req);
+  if (!access) return res.status(404).json({ error: "Not found" });
+  const { project, ownerId } = access;
   const { rows } = await q(
-    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='channels'", [req.user.id]);
+    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='channels'", [ownerId]);
   const channels = Array.isArray(rows[0]?.value?.channels) ? rows[0].value.channels : [];
   const { rows: catRows } = await q(
-    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='ideaCategories'", [req.user.id]);
+    "SELECT value FROM tool_data WHERE user_id=$1 AND tool='contentflow' AND key='ideaCategories'", [ownerId]);
   const ideaCategories = Array.isArray(catRows[0]?.value?.categories) ? catRows[0].value.categories : [];
 
   // Mood-canvas images (and the Post-stage retention screenshot) live in canvas_images,
   // keyed by id — pull every image belonging to this project so the PDF can embed them.
   const { rows: imgRows } = await q(
-    "SELECT id, mime, data FROM canvas_images WHERE user_id=$1 AND project_id=$2", [req.user.id, project.id]);
+    "SELECT id, mime, data FROM canvas_images WHERE user_id=$1 AND project_id=$2", [ownerId, project.id]);
   const canvasImages = new Map(imgRows.map((r) => [r.id, r]));
 
   const filename = (project.title || "project").replace(/[^a-z0-9]+/gi, "_").slice(0, 60) + ".pdf";

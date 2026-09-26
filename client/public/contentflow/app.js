@@ -11,7 +11,7 @@ const STAGE_LABELS = {
 
 const state = {
   projects: [],
-  role: "strategist",
+  activeRole: "strategist", // real role for the CURRENTLY OPEN project — set by renderDetail from server data, never self-selected
   currentProjectId: null,
   activeTab: "inspiration",
   ideaCategories: [],
@@ -30,8 +30,15 @@ async function api(path, opts) {
     credentials: "include",
     ...opts,
   });
-  if (res.status === 401 || res.status === 403) { window.location.href = "/"; throw new Error("Not signed in"); }
-  if (!res.ok) throw new Error("API error: " + res.status);
+  // 401 = no session at all -> back to login. 403 now also covers "your role can't edit
+  // this stage" (real per-project permissions, not just tool-level access) — that must
+  // surface as a normal error the caller can show, not bounce the user out entirely.
+  if (res.status === 401) { window.location.href = "/"; throw new Error("Not signed in"); }
+  if (!res.ok) {
+    let message = "API error: " + res.status;
+    try { const body = await res.json(); if (body && body.error) message = body.error; } catch { /* non-JSON error body */ }
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -52,7 +59,7 @@ const EDIT_PERMISSIONS = {
 };
 
 function canEdit(stage) {
-  return EDIT_PERMISSIONS[state.role].includes(stage);
+  return EDIT_PERMISSIONS[state.activeRole || "strategist"].includes(stage);
 }
 
 // ---------- Routing ----------
@@ -310,6 +317,11 @@ async function jumpToSearchResult(i) {
 
 // ---------- Detail ----------
 function renderDetail(project) {
+  // Real, server-issued role for THIS project: full rights if you own it, otherwise
+  // whatever role the owner shared it with you as. Never self-selectable.
+  state.activeRole = project._shared ? project._shared.role : "strategist";
+  const isOwner = !project._shared;
+
   const tabs = STAGES.map((stage) => {
     const active = state.activeTab === stage ? "active" : "";
     return `<div class="step ${active}" onclick="goProject('${project.id}','${stage}')">${STAGE_LABELS[stage]}${!canEdit(stage) ? '<span class="step-badge">view</span>' : ""}</div>`;
@@ -318,29 +330,34 @@ function renderDetail(project) {
   app.innerHTML = `
     <div class="back-link" onclick="goBoard()">&larr; Back to board</div>
     <div class="detail-header">
-      <div>
+      <div style="flex:1;min-width:0;">
         <div class="detail-brand">${escapeHtml(project.brand || "")}</div>
-        <h1 class="detail-title">${escapeHtml(project.title)}</h1>
+        <div id="titleHost" style="display:flex;align-items:center;gap:8px;"></div>
+        ${!isOwner ? `<div class="shared-badge">🔗 Shared by ${escapeHtml(project._shared.ownerEmail)} · your role: ${roleLabel(project._shared.role)}</div>` : ""}
       </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <select onchange="changeStage('${project.id}', this.value)" style="height:36px;">
-          ${STAGES.map((s) => `<option value="${s}" ${project.stage === s ? "selected" : ""}>${STAGE_LABELS[s]}</option>`).join("")}
-          <option value="done" ${project.stage === "done" ? "selected" : ""}>Done</option>
-        </select>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        ${isOwner ? `
+          <select onchange="changeStage('${project.id}', this.value)" style="height:36px;">
+            ${STAGES.map((s) => `<option value="${s}" ${project.stage === s ? "selected" : ""}>${STAGE_LABELS[s]}</option>`).join("")}
+            <option value="done" ${project.stage === "done" ? "selected" : ""}>Done</option>
+          </select>
+          <button class="btn btn-sm" onclick="openShareModal('${project.id}')">🔗 Share</button>
+        ` : ""}
         <a class="btn btn-sm" href="/api/contentflow/projects/${project.id}/pdf" target="_blank" rel="noopener">⬇ Export PDF</a>
-        <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="confirmDeleteProject('${project.id}')">🗑 Delete</button>
+        ${isOwner ? `<button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="confirmDeleteProject('${project.id}')">🗑 Delete</button>` : ""}
       </div>
     </div>
     <div class="stepper">${tabs}</div>
     ${renderStageDateBar(project)}
     <div id="tabContent"></div>
   `;
+  renderTitleHost(project, isOwner);
 
   const contentEl = document.getElementById("tabContent");
   const editable = canEdit(state.activeTab);
   const banner = editable
     ? ""
-    : `<div class="readonly-banner">Viewing as ${roleLabel(state.role)} — this stage is read-only for context. You can edit the ${STAGE_LABELS[EDIT_PERMISSIONS[state.role][0]] || ""} tab.</div>`;
+    : `<div class="readonly-banner">Your role (${roleLabel(state.activeRole)}) can't edit this stage — it's here for context. You can edit the ${STAGE_LABELS[EDIT_PERMISSIONS[state.activeRole][0]] || ""} tab.</div>`;
 
   let body = "";
   if (state.activeTab === "channel") body = renderChannel(project, editable);
@@ -353,6 +370,40 @@ function renderDetail(project) {
 
   contentEl.innerHTML = banner + body;
   processInstagramEmbeds();
+}
+
+// Project title: click-to-edit for the owner (isOwner controls edit rights, same as the
+// rest of the header — a shared user, even a strategist-level one on their OWN projects
+// elsewhere, can't rename something they don't own).
+function renderTitleHost(project, isOwner) {
+  const host = document.getElementById("titleHost");
+  host.innerHTML = `
+    <h1 class="detail-title" style="margin:0;">${escapeHtml(project.title)}</h1>
+    ${isOwner ? `<button class="icon-btn" title="Rename" onclick="editProjectTitle('${project.id}')">✎</button>` : ""}`;
+}
+function editProjectTitle(pid) {
+  const project = getProject(pid);
+  const host = document.getElementById("titleHost");
+  host.innerHTML = `
+    <input type="text" id="titleEditInput" value="${escapeAttr(project.title)}" style="font-size:20px;font-weight:700;padding:4px 8px;flex:1;" />
+    <button class="btn btn-sm btn-primary" onclick="saveProjectTitle('${pid}')">Save</button>
+    <button class="btn btn-sm" onclick="renderTitleHost(getProject('${pid}'), true)">Cancel</button>`;
+  const input = document.getElementById("titleEditInput");
+  input.focus();
+  input.select();
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveProjectTitle(pid);
+    if (e.key === "Escape") renderTitleHost(getProject(pid), true);
+  });
+}
+async function saveProjectTitle(pid) {
+  const title = document.getElementById("titleEditInput").value.trim();
+  if (!title) { alert("Title can't be empty."); return; }
+  const project = getProject(pid);
+  if (project) project.title = title; // optimistic
+  renderTitleHost(project, true);
+  await api(`/projects/${pid}`, { method: "PATCH", body: JSON.stringify({ title }) });
+  await loadProjects();
 }
 
 // A small bar under the tabs: the date THIS stage was worked on (editable).
@@ -390,6 +441,77 @@ async function deleteProjectNow(pid) {
   await api(`/projects/${pid}`, { method: "DELETE" });
   await loadProjects();
   goBoard();
+}
+
+// ---------- Project sharing ----------
+// Real, server-checked collaboration: give a specific u2berhub account (they must
+// already exist and have ContentFlow access) a role on THIS project only. Owner-only.
+async function openShareModal(pid) {
+  modalRoot.innerHTML = `
+    <div class="modal-overlay" onclick="closeModalIfOverlay(event)">
+      <div class="modal modal-wide">
+        <h3>Share this project</h3>
+        <p class="muted" style="margin-top:4px;font-size:12.5px;">
+          They need an existing, admin-approved u2berhub account with ContentFlow access. Their role
+          controls what they can edit here — Strategist: everything, Videographer: Shoot only, Editor: Edit only.
+          Every stage stays viewable to them either way.
+        </p>
+        <div id="shareList" style="margin-top:12px;"></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="field" style="flex:2;min-width:200px;margin:0;">
+            <label class="field-label">Email</label>
+            <input type="email" id="shareEmail" placeholder="editor@example.com" />
+          </div>
+          <div class="field" style="flex:1;min-width:140px;margin:0;">
+            <label class="field-label">Role</label>
+            <select id="shareRole" class="input-sm" style="width:100%;">
+              <option value="editor">Editor</option>
+              <option value="videographer">Videographer</option>
+              <option value="strategist">Strategist</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addShare('${pid}')">+ Share</button>
+        </div>
+        <div id="shareStatus" class="muted" style="font-size:12px;margin-top:6px;"></div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button class="btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+  await renderShareList(pid);
+}
+
+async function renderShareList(pid) {
+  const { shares } = await api(`/projects/${pid}/shares`);
+  const host = document.getElementById("shareList");
+  host.innerHTML = shares.length
+    ? shares.map((s) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px;">
+        <span style="flex:1;font-size:13px;">${escapeHtml(s.email)}</span>
+        <span class="tag">${escapeHtml(roleLabel(s.role))}</span>
+        <button class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="revokeShare('${pid}','${s.id}')">Revoke</button>
+      </div>`).join("")
+    : `<div class="muted" style="font-size:12.5px;padding:6px 0;">Not shared with anyone yet.</div>`;
+}
+
+async function addShare(pid) {
+  const email = document.getElementById("shareEmail").value.trim();
+  const role = document.getElementById("shareRole").value;
+  const statusEl = document.getElementById("shareStatus");
+  if (!email) { statusEl.textContent = "Enter an email."; return; }
+  try {
+    await api(`/projects/${pid}/shares`, { method: "POST", body: JSON.stringify({ email, role }) });
+    document.getElementById("shareEmail").value = "";
+    statusEl.textContent = "";
+    await renderShareList(pid);
+  } catch (e) {
+    statusEl.textContent = e.message || "Couldn't share that.";
+  }
+}
+
+async function revokeShare(pid, shareId) {
+  await api(`/projects/${pid}/shares/${shareId}`, { method: "DELETE" });
+  await renderShareList(pid);
 }
 
 // ---------- Post / results stage ----------
@@ -2338,11 +2460,6 @@ async function createProject() {
 }
 
 // ---------- Role switching ----------
-document.getElementById("roleSelect").addEventListener("change", (e) => {
-  state.role = e.target.value;
-  render();
-});
-
 // ---------- Utils ----------
 function escapeHtml(str) {
   if (!str) return "";

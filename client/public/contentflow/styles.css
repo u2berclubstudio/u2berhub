@@ -387,6 +387,7 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--a
   display: flex; align-items: center; justify-content: center; padding: 0;
 }
 .icon-btn:hover { background: #FDECEA; color: var(--red); }
+.shared-badge { font-size: 11.5px; color: var(--amber-dark); font-weight: 600; margin-top: 4px; }
 
 /* ---- ideas list ---- */
 .idea-row {
