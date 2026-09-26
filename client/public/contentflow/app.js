@@ -91,6 +91,9 @@ function renderBoard() {
         <option value="">All brands</option>
         ${brands.map((b) => `<option value="${escapeAttr(b)}">${escapeHtml(b)}</option>`).join("")}
       </select>
+      <label class="muted" style="font-size:11.5px;display:flex;align-items:center;gap:5px;">On date
+        <input id="boardDateFilter" type="date" class="input-sm" onchange="renderBoardColumns()" />
+      </label>
       <button class="btn btn-sm" onclick="clearBoardFilters()">Clear</button>
       <button class="btn btn-sm" onclick="openGlobalSearch()" style="margin-left:auto;">🔍 Search everything</button>
     </div>
@@ -102,33 +105,65 @@ function renderBoard() {
 function clearBoardFilters() {
   document.getElementById("boardSearch").value = "";
   document.getElementById("boardBrandFilter").value = "";
+  document.getElementById("boardDateFilter").value = "";
   renderBoardColumns();
 }
+
+// Every date field worth filtering by: when each stage started, the planned shoot date,
+// and the posted date. Returns the labels of whichever ones match the picked date, so the
+// card can show *why* it matched (e.g. "Shoot scheduled").
+function projectDateMatches(p, dateStr) {
+  const labels = [];
+  const dates = p.stageDates || {};
+  STAGES.forEach((stage) => { if (dates[stage] === dateStr) labels.push(`${STAGE_LABELS[stage]} started`); });
+  if ((p.shoot || {}).date === dateStr) labels.push("Shoot scheduled");
+  if ((p.post || {}).postedDate === dateStr) labels.push("Posted");
+  return labels;
+}
+
+// Which role owns getting the CURRENT stage done — mirrors EDIT_PERMISSIONS: videographer
+// only edits "shoot", editor only edits "edit", strategist covers everything else.
+function stageOwnerRole(stage) {
+  if (stage === "shoot") return "videographer";
+  if (stage === "edit") return "editor";
+  return "strategist";
+}
+const ROLE_ICON = { strategist: "📋", videographer: "🎥", editor: "✂️" };
 
 function renderBoardColumns() {
   const search = (document.getElementById("boardSearch").value || "").trim().toLowerCase();
   const brand = document.getElementById("boardBrandFilter").value || "";
+  const dateFilter = document.getElementById("boardDateFilter").value || "";
 
   const filtered = state.projects.filter((p) => {
     if (search && !p.title.toLowerCase().includes(search)) return false;
     // trim — brand names can pick up stray leading/trailing spaces when typed,
     // and the dropdown's option values are already trimmed (see renderBoard)
     if (brand && (p.brand || "").trim() !== brand) return false;
+    if (dateFilter && !projectDateMatches(p, dateFilter).length) return false;
     return true;
   });
 
   const cols = STAGES.map((stage) => {
     const items = filtered.filter((p) => p.stage === stage);
     const cards = items
-      .map(
-        (p) => `
-      <div class="card" onclick="goProject('${p.id}')">
-        <div class="card-brand">${escapeHtml(p.brand || "")}</div>
+      .map((p) => {
+        const dateHits = dateFilter ? projectDateMatches(p, dateFilter) : [];
+        const role = stageOwnerRole(p.stage);
+        return `
+      <div class="card" style="${p.color ? `border-left:4px solid ${escapeAttr(p.color)};` : ""}" onclick="goProject('${p.id}')">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+          <div class="card-brand">${escapeHtml(p.brand || "")}</div>
+          <input type="color" class="card-color-swatch" title="Tag this project with a color" value="${p.color || "#E8852B"}"
+            onclick="event.stopPropagation()" onchange="event.stopPropagation();setProjectColor('${p.id}', this.value)" />
+        </div>
         <div class="card-title">${escapeHtml(p.title)}</div>
         <div class="card-meta">${p.inspirations.length} reference${p.inspirations.length === 1 ? "" : "s"} &middot; ${p.script.blocks.length} shot${p.script.blocks.length === 1 ? "" : "s"}</div>
+        <div class="card-owner" title="Owns the ${STAGE_LABELS[p.stage]} stage">${ROLE_ICON[role]} ${roleLabel(role)} — ${STAGE_LABELS[p.stage]} pending</div>
+        ${dateHits.length ? `<div class="card-date-hit">📅 ${dateHits.map(escapeHtml).join(", ")}</div>` : ""}
         ${pipelineDots(p.stage)}
-      </div>`
-      )
+      </div>`;
+      })
       .join("");
     return `
       <div class="board-col">
@@ -138,6 +173,13 @@ function renderBoardColumns() {
   }).join("");
 
   document.getElementById("boardColumns").innerHTML = cols;
+}
+
+async function setProjectColor(pid, color) {
+  const p = getProject(pid);
+  if (p) p.color = color; // optimistic, same pattern as the idea race-condition fix
+  await api(`/projects/${pid}`, { method: "PATCH", body: JSON.stringify({ color }) });
+  renderBoardColumns();
 }
 
 function pipelineDots(stage) {
