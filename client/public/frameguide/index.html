@@ -60,6 +60,43 @@
     text-align: right; color: var(--accent); font-variant-numeric: tabular-nums; }
   #zoom { flex: 1; min-width: 60px; accent-color: var(--accent); }
   .toast { z-index: 6; }
+  /* lens picker */
+  .lenses { position: absolute; top: 10px; left: 12px; display: flex; gap: 4px; padding: 3px; border-radius: 999px;
+    background: rgba(11,12,14,.6); z-index: 4; }
+  .lenses button { min-width: 36px; height: 30px; padding: 0 8px; border-radius: 999px; font-family: var(--hud); font-weight: 700;
+    font-size: 14px; letter-spacing: .03em; color: var(--ink); }
+  .lenses button[aria-pressed="true"] { background: var(--accent); color: #1a1406; }
+  /* shutter */
+  .shutter { position: absolute; right: 12px; bottom: 12px; width: 58px; height: 58px; border-radius: 50%; z-index: 4;
+    background: rgba(255,255,255,.18); border: 3px solid #fff; display: grid; place-items: center; }
+  .shutter::after { content: ''; width: 42px; height: 42px; border-radius: 50%; background: #fff; transition: transform .12s; }
+  .shutter:active::after { transform: scale(.86); }
+  #stage .info { right: 82px; }
+  /* photo / video mode */
+  .modes { position: absolute; right: 12px; bottom: 78px; width: 58px; display: flex; flex-direction: column; gap: 3px; z-index: 4;
+    background: rgba(11,12,14,.6); border-radius: 12px; padding: 3px; }
+  .modes button { font-family: var(--hud); font-weight: 700; font-size: 12px; letter-spacing: .06em; padding: 5px 0; border-radius: 9px; color: var(--muted); }
+  .modes button[aria-pressed="true"] { background: var(--panel-2); color: var(--accent); }
+  .shutter.video::after { background: #ff3b30; }
+  .shutter.rec::after { width: 24px; height: 24px; border-radius: 6px; background: #ff3b30; }
+  .rec-time { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 7px;
+    font-family: var(--hud); font-weight: 700; font-size: 18px; letter-spacing: .06em; padding: 3px 12px; border-radius: 8px;
+    background: rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
+  .rec-time::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .shot-img video { max-width: 100%; max-height: 100%; border-radius: 6px; background: #000; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 7; }
+  /* photo preview */
+  .shot-back { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.92); display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+  .shot-img { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; }
+  .shot-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+  .shot-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 10px 16px 14px; }
+  .shot-bar button { font-family: var(--hud); font-weight: 600; font-size: 15px; letter-spacing: .06em; text-transform: uppercase;
+    padding: 10px 14px; border-radius: 12px; background: var(--panel-2); }
+  .shot-bar button.primary { background: var(--accent); color: #1a1406; }
+  .shot-bar button[aria-pressed="true"] { color: var(--accent); }
+  .shot-meta { text-align: center; color: var(--muted); font-size: 12.5px; }
   .scr-menu.low { top: auto; bottom: 10px; }
   .scr-menu { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5;
     display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: calc(100% - 24px);
@@ -172,6 +209,13 @@
       <canvas id="ref" hidden></canvas>
       <canvas id="ov"></canvas>
     </div>
+    <div class="lenses" id="lenses" hidden role="group" aria-label="Lens"></div>
+    <div class="modes" id="modes" role="group" aria-label="Capture mode">
+      <button data-m="photo">PHOTO</button><button data-m="video">VIDEO</button><button id="recLines" title="Burn the guide lines into the video">LINES</button>
+    </div>
+    <button class="shutter" id="shutter" aria-label="Take a reference photo" title="Take a reference photo"></button>
+    <div class="rec-time" id="recTime" hidden>00:00</div>
+    <div id="flash"></div>
     <div class="readout" id="levelOut" hidden>0.0°</div>
     <div class="toast" id="toast" style="opacity:0"></div>
     <div class="info" id="info">
@@ -233,6 +277,17 @@
   </div>
 </div>
 
+<div class="shot-back" id="shotBack" hidden>
+  <div class="shot-img"><img id="shotImg" alt="Reference photo"><video id="shotVid" controls playsinline hidden></video></div>
+  <div class="shot-meta" id="shotMeta"></div>
+  <div class="shot-bar">
+    <button id="shotGuides" aria-pressed="true">Guides on</button>
+    <button class="primary" id="shotSave">Save</button>
+    <button id="shotRef">Use as ref</button>
+    <button id="shotClose">Close</button>
+  </div>
+</div>
+
 <div class="sheet-back" id="sheetBack" hidden>
   <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
     <div class="sheet-head">
@@ -259,7 +314,7 @@
   // ---------- state ----------
   const state = { aspect: '9:16', tpl: 'thirds', opacity: 70, color: COLORS[0],
     flipH: false, flipV: false, level: false, facing: 'environment', fx: 0.5, fy: 0.42, infoMin: false,
-    zoom: 1, scr: null };
+    zoom: 1, scr: null, lens: '', mode: 'photo', recLines: true };
   try { Object.assign(state, JSON.parse(localStorage.getItem('frameguide') || '{}')); } catch (e) {}
   const save = () => { try { localStorage.setItem('frameguide', JSON.stringify(state)); } catch (e) {} };
 
@@ -904,7 +959,7 @@
   const aspectsEl = $('aspects'), chipsEl = $('chips'), swEl = $('swatches');
   ASPECTS.forEach(a => {
     const b = document.createElement('button'); b.textContent = a.id; b.dataset.id = a.id;
-    b.onclick = () => { state.aspect = a.id; if (state.scr || marking) { state.scr = null; marking = null; hint(''); } save(); syncUI(); layout(); if (hasRef) clearRef(); };
+    b.onclick = () => { if (rec) stopRec(); state.aspect = a.id; if (state.scr || marking) { state.scr = null; marking = null; hint(''); } save(); syncUI(); layout(); if (hasRef) clearRef(); };
     aspectsEl.appendChild(b);
   });
   TEMPLATES.forEach(t => {
@@ -1138,9 +1193,12 @@
       return;
     }
     try {
+      if (rec) stopRec();
       if (stream) stream.getTracks().forEach(t => t.stop());
-      stream = await navigator.mediaDevices.getUserMedia({ audio: false,
-        video: { facingMode: { ideal: state.facing }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      const want = state.facing === 'environment' && state.lens && lensList.find(l => l.label === state.lens);
+      const vid = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+      if (want) vid.deviceId = { exact: want.id }; else vid.facingMode = { ideal: state.facing };
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: vid });
       video.srcObject = stream; video.hidden = false;
       video.classList.toggle('mirror', state.facing === 'user');
       const tr = stream.getVideoTracks()[0], caps = tr && tr.getCapabilities ? tr.getCapabilities() : {};
@@ -1148,6 +1206,7 @@
       applyZoom();
       await video.play().catch(() => {});
       $('gate').hidden = true; keepAwake();
+      await loadLenses();
     } catch (err) {
       msg.className = 'err';
       msg.textContent = err && err.name === 'NotAllowedError'
@@ -1157,6 +1216,174 @@
   }
   $('startBtn').onclick = startCamera;
   $('flipCam').onclick = () => { state.facing = state.facing === 'user' ? 'environment' : 'user'; save(); if (stream) startCamera(); };
+
+  // ---------- lens picker (ultra wide / wide / telephoto, as the browser exposes them) ----------
+  let lensList = [];
+  function lensName(label, i) {
+    const l = label.toLowerCase();
+    if (l.includes('ultra wide')) return { tag: '0.5', rank: 0 };
+    if (l.includes('telephoto')) return { tag: 'Tele', rank: 2 };
+    if (l.includes('triple') || l.includes('dual')) return { tag: 'Auto', rank: 3 };
+    if (l.includes('back camera') || l === 'back camera') return { tag: '1\u00d7', rank: 1 };
+    return { tag: 'Cam ' + (i + 1), rank: 4 + i };
+  }
+  async function loadLenses() {
+    const el = $('lenses'); el.textContent = '';
+    if (state.facing === 'user' || !navigator.mediaDevices.enumerateDevices) { el.hidden = true; return; }
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && d.label && !/front|user|facetime/i.test(d.label));
+    lensList = all.map((d, i) => Object.assign({ id: d.deviceId, label: d.label }, lensName(d.label, i))).sort((a, b) => a.rank - b.rank);
+    if (lensList.length < 2) { el.hidden = true; return; }
+    const cur = stream && stream.getVideoTracks()[0], curLabel = cur ? cur.label : '';
+    lensList.forEach(l => {
+      const b = document.createElement('button'); b.textContent = l.tag; b.title = l.label;
+      pressed(b, l.label === curLabel);
+      b.onclick = () => { if (l.label === curLabel) return; state.lens = l.label; save(); startCamera(); toast(l.label); };
+      el.appendChild(b);
+    });
+    el.hidden = false;
+    // first start can't pick a lens by name (names appear only after permission) -> switch once now
+    const wantL = state.lens && lensList.find(l => l.label === state.lens);
+    if (wantL && wantL.label !== curLabel && !lensRetry) { lensRetry = true; startCamera(); }
+  }
+  let lensRetry = false;
+
+  // ---------- reference photo (with or without the guide) ----------
+  let shot = null;
+  function cropOf() {
+    let src = bg, x0 = 0, y0 = 0, sw = bg.width, sh = bg.height, mirror = false;
+    if (stream && video.videoWidth) {
+      src = video; const vr = video.videoWidth / video.videoHeight, fr = W / H;
+      sw = video.videoWidth; sh = video.videoHeight;
+      if (vr > fr) { sw = sh * fr; x0 = (video.videoWidth - sw) / 2; } else { sh = sw / fr; y0 = (video.videoHeight - sh) / 2; }
+      x0 += sw * (1 - 1 / digital) / 2; y0 += sh * (1 - 1 / digital) / 2; sw /= digital; sh /= digital;
+      mirror = state.facing === 'user';
+    } else { const z = state.zoom; x0 = sw * (1 - 1 / z) / 2; y0 = sh * (1 - 1 / z) / 2; sw /= z; sh /= z; }
+    return { src, x0, y0, sw, sh, mirror };
+  }
+  function captureCanvas() {   // what the frame shows, at the camera's own resolution
+    let src = bg, x0 = 0, y0 = 0, sw = bg.width, sh = bg.height, mirror = false;
+    if (stream && video.videoWidth) {
+      src = video; const vr = video.videoWidth / video.videoHeight, fr = W / H;
+      sw = video.videoWidth; sh = video.videoHeight;
+      if (vr > fr) { sw = sh * fr; x0 = (video.videoWidth - sw) / 2; } else { sh = sw / fr; y0 = (video.videoHeight - sh) / 2; }
+      x0 += sw * (1 - 1 / digital) / 2; y0 += sh * (1 - 1 / digital) / 2; sw /= digital; sh /= digital;
+      mirror = state.facing === 'user';
+    } else { const z = state.zoom; x0 = sw * (1 - 1 / z) / 2; y0 = sh * (1 - 1 / z) / 2; sw /= z; sh /= z; }
+    const scale = Math.max(1, 1080 / Math.min(sw, sh));   // never smaller than 1080 on the short side
+    const cv = document.createElement('canvas'); cv.width = Math.round(sw * scale); cv.height = Math.round(sh * scale);
+    const c = cv.getContext('2d');
+    if (mirror) { c.translate(cv.width, 0); c.scale(-1, 1); }
+    c.drawImage(src, x0, y0, sw, sh, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  function blobOf(cv) { return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)); }
+  async function takePhoto() {
+    const f = $('flash'); f.style.transition = 'none'; f.style.opacity = .7;
+    requestAnimationFrame(() => { f.style.transition = 'opacity .25s'; f.style.opacity = 0; });
+    const clean = captureCanvas();
+    const guided = document.createElement('canvas'); guided.width = clean.width; guided.height = clean.height;
+    const g = guided.getContext('2d'); g.drawImage(clean, 0, 0);
+    if (state.scr) g.drawImage(ov, 0, 0, guided.width, guided.height);   // screen-locked guide, as you see it
+    else drawTpl(g, guided.width, guided.height);                         // crisp guide at full size
+    const tpl = currentTpl(), stamp = new Date();
+    const name = 'frameguide-' + stamp.toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const [bc, bgd] = await Promise.all([blobOf(clean), blobOf(guided)]);
+    if (shot) { URL.revokeObjectURL(shot.urlC); URL.revokeObjectURL(shot.urlG); }
+    shot = { clean, name, tpl: tpl.name, w: clean.width, h: clean.height, guides: true,
+      fileC: new File([bc], name + '.jpg', { type: 'image/jpeg' }), fileG: new File([bgd], name + '-' + tpl.id + '.jpg', { type: 'image/jpeg' }),
+      urlC: URL.createObjectURL(bc), urlG: URL.createObjectURL(bgd) };
+    showShot();
+  }
+  function showShot() {
+    $('shotImg').hidden = false; $('shotVid').hidden = true; $('shotVid').removeAttribute('src');
+    $('shotGuides').hidden = false; $('shotRef').hidden = false;
+    $('shotImg').src = shot.guides ? shot.urlG : shot.urlC;
+    pressed($('shotGuides'), shot.guides); $('shotGuides').textContent = shot.guides ? 'Guides on' : 'Guides off';
+    $('shotMeta').textContent = `${shot.tpl} \u00b7 ${shot.w}\u00d7${shot.h}`;
+    $('shotBack').hidden = false;
+  }
+  $('shutter').onclick = () => { if (state.mode === 'video') { rec ? stopRec() : startRec(); } else takePhoto(); };
+  $('shotGuides').onclick = () => { shot.guides = !shot.guides; showShot(); };
+  $('shotClose').onclick = () => { $('shotBack').hidden = true; $('shotVid').pause(); };
+  $('shotSave').onclick = () => {
+    const file = shot.video ? shot.file : (shot.guides ? shot.fileG : shot.fileC);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {   // iPhone: share sheet -> Save Image
+      navigator.share({ files: [file] }).catch(() => {});
+    } else {
+      const a = document.createElement('a'); a.href = shot.video ? shot.url : (shot.guides ? shot.urlG : shot.urlC); a.download = file.name; a.click();
+    }
+  };
+  // ---------- reference video: records the frame as you see it (crop + zoom), lines optional ----------
+  let rec = null;
+  function syncModes() {
+    $('modes').querySelectorAll('[data-m]').forEach(b => pressed(b, b.dataset.m === state.mode));
+    $('recLines').hidden = state.mode !== 'video'; pressed($('recLines'), state.recLines);
+    $('shutter').classList.toggle('video', state.mode === 'video'); $('shutter').classList.toggle('rec', !!rec);
+    $('shutter').setAttribute('aria-label', state.mode === 'video' ? (rec ? 'Stop recording' : 'Start recording') : 'Take a reference photo');
+  }
+  $('modes').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { if (rec) return; state.mode = b.dataset.m; save(); syncModes(); });
+  $('recLines').onclick = () => { if (rec) return; state.recLines = !state.recLines; save(); syncModes(); toast(state.recLines ? 'Lines in video: on' : 'Lines in video: off'); };
+  function pickMime() {
+    if (!window.MediaRecorder) return null;
+    for (const m of ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']) if (MediaRecorder.isTypeSupported(m)) return m;
+    return '';
+  }
+  async function startRec() {
+    const mime = pickMime();
+    if (mime === null) { toast('Recording is not supported in this browser'); return; }
+    const f0 = cropOf(), cv = document.createElement('canvas');
+    const up = Math.max(1, 1080 / Math.min(f0.sw, f0.sh)), k = Math.min(1, 1920 / (Math.max(f0.sw, f0.sh) * up)) * up;
+    cv.width = Math.round(f0.sw * k / 2) * 2; cv.height = Math.round(f0.sh * k / 2) * 2;
+    const c = cv.getContext('2d');
+    let mic = null;
+    try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false }, video: false }); }
+    catch (e) { toast('No microphone · recording without sound'); }
+    const out = cv.captureStream(30);
+    if (mic) mic.getAudioTracks().forEach(t => out.addTrack(t));
+    const chunks = [], mr = new MediaRecorder(out, Object.assign({ videoBitsPerSecond: 10e6 }, mime ? { mimeType: mime } : {}));
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = () => {
+      out.getTracks().forEach(t => t.stop()); if (mic) mic.getTracks().forEach(t => t.stop());
+      const type = mr.mimeType || mime || 'video/mp4', ext = /mp4/.test(type) ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: type.split(';')[0] });
+      const name = 'frameguide-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.' + ext;
+      if (shot) { URL.revokeObjectURL(shot.urlC || ''); URL.revokeObjectURL(shot.urlG || ''); URL.revokeObjectURL(shot.url || ''); }
+      shot = { video: true, url: URL.createObjectURL(blob), file: new File([blob], name, { type: blob.type }) };
+      const v = $('shotVid'); v.src = shot.url; v.hidden = false; $('shotImg').hidden = true;
+      $('shotGuides').hidden = true; $('shotRef').hidden = true;
+      $('shotMeta').textContent = `${cv.width}×${cv.height} · ${fmt(rec.secs)} · ${(blob.size / 1048576).toFixed(1)} MB`;
+      $('shotBack').hidden = false; rec = null; syncModes();
+    };
+    rec = { mr, t0: performance.now(), secs: 0, lines: state.recLines, raf: 0, tick: 0 };
+    const draw = () => {
+      if (!rec) return;
+      const k = cropOf();               // same crop/zoom/mirror as the live frame
+      c.save(); if (k.mirror) { c.translate(cv.width, 0); c.scale(-1, 1); }
+      c.drawImage(k.src, k.x0, k.y0, k.sw, k.sh, 0, 0, cv.width, cv.height); c.restore();
+      if (rec.lines) { if (state.scr) c.drawImage(ov, 0, 0, cv.width, cv.height); else drawTpl(c, cv.width, cv.height); }
+      rec.secs = (performance.now() - rec.t0) / 1000; $('recTime').textContent = fmt(rec.secs);
+      rec.raf = requestAnimationFrame(draw);
+    };
+    draw(); mr.start(1000);
+    $('recTime').hidden = false; $('lenses').style.visibility = 'hidden'; syncModes();
+  }
+  function stopRec() {
+    if (!rec) return;
+    cancelAnimationFrame(rec.raf); $('recTime').hidden = true; $('lenses').style.visibility = '';
+    const r = rec; if (r.mr.state !== 'inactive') r.mr.stop(); else rec = null;
+    syncModes();
+  }
+  function fmt(s) { s = Math.floor(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' && rec) stopRec(); });
+  syncModes();
+
+  $('shotRef').onclick = () => {                                        // ghost this photo over the live view
+    ref.width = Math.round(W * dpr); ref.height = Math.round(H * dpr);
+    ref.getContext('2d').drawImage(shot.clean, 0, 0, ref.width, ref.height);
+    ref.classList.remove('mirror');
+    hasRef = true; ref.hidden = false; pressed($('refBtn'), true); $('refLabel').textContent = 'Clear';
+    $('shotBack').hidden = true; toast('Photo set as reference');
+  };
 
   // ---------- reference frame (freeze & ghost) ----------
   function clearRef() { hasRef = false; ref.hidden = true; pressed($('refBtn'), false); $('refLabel').textContent = 'Ref'; }
