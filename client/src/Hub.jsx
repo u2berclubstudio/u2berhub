@@ -10,6 +10,7 @@ export default function Hub({ me, go }) {
     if (t.id === "contentflow") { window.location.href = "/contentflow/"; return; }
     if (t.id === "pillargen") { window.location.href = "/pillargen/"; return; }
         if (t.id === "frameguide") { window.location.href = "/frameguide/"; return; }
+    if (t.id === "voicecoach") { window.location.href = "/voicecoach/"; return; }
     go("/tool/" + t.id);
   };
 

@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1018">
+<title>U2BER Voice Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Mukta:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a prep desk (script library + annotated lines) and a full-screen dark stage for the prompter */
+:root{
+  --bg:#f2f3f7; --surface:#ffffff; --ink:#1a1c25; --muted:#5b6072; --line:#dde0e9; --chip:#eceef4;
+  --accent:#a95f08; --accent-ink:#ffffff; --emph:#a95f08; --pause:#1b7488;
+  --ok:#23804d; --warn:#a96d00; --bad:#bb3b31;
+  --stage:#0f1018; --stage-ink:#ecebf3; --stage-dim:#62627a; --stage-emph:#f5b642; --stage-pause:#6fd0e3;
+  --stage-panel:#191a25; --stage-line:#2a2b3b; --stage-ok:#5fd394; --stage-warn:#f3c056; --stage-bad:#ff7a6b;
+  --f-display:"Bricolage Grotesque", "Mukta", system-ui, sans-serif;
+  --f-body:"Mukta", "Noto Sans Devanagari", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#12131a; --surface:#1a1b25; --ink:#e9e9f1; --muted:#9a9db1; --line:#2b2d3b; --chip:#242634;
+  --accent:#f0a93a; --accent-ink:#1d1405; --emph:#f2b14a; --pause:#6fd0e3;
+  --ok:#5fd394; --warn:#f3c056; --bad:#ff7a6b; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#12131a; --surface:#1a1b25; --ink:#e9e9f1; --muted:#9a9db1; --line:#2b2d3b; --chip:#242634;
+  --accent:#f0a93a; --accent-ink:#1d1405; --emph:#f2b14a; --pause:#6fd0e3;
+  --ok:#5fd394; --warn:#f3c056; --bad:#ff7a6b; color-scheme:dark }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
+button,select,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 60px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:12px}
+.tally{width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+.brand h1{font-family:var(--f-display);font-size:26px;margin:0;letter-spacing:-.01em}
+.brand p{margin:0;color:var(--muted);font-size:14px}
+.back{color:var(--muted);text-decoration:none;font-size:14px;margin-right:4px}
+.back:hover{color:var(--ink)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.small{padding:5px 10px;font-size:13px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.55;cursor:default}
+.library{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:18px}
+.library select{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 10px;min-width:0;flex:1 1 220px;max-width:420px}
+.library .spacer{flex:1}
+.save{font-size:13px;color:var(--muted);font-family:var(--f-mono)}
+.save.err{color:var(--bad)}
+.grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;display:block;margin-bottom:8px}
+#titleIn{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--bg);font-size:16px;font-weight:500;margin-bottom:14px}
+textarea#scriptIn{width:100%;min-height:280px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg);line-height:1.6;font-size:15px}
+.syntax{font-size:13px;color:var(--muted);margin:10px 0 14px;display:grid;gap:4px}
+.syntax code{font-family:var(--f-mono);font-size:12px;background:var(--chip);padding:1px 6px;border-radius:4px;color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.status{font-size:13px;color:var(--muted);min-height:20px;margin-top:10px}
+.status.err{color:var(--bad)}
+.annot-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.annot-head h2{font-family:var(--f-display);font-size:20px;margin:0;display:flex;align-items:center;gap:10px}
+.tag{font-family:var(--f-body);font-size:12px;font-weight:500;background:var(--chip);color:var(--muted);padding:2px 8px;border-radius:99px}
+.tools{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:6px 12px;font-size:14px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:700}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:4px 0 14px}
+.overall{background:var(--chip);border-radius:8px;padding:10px 14px;font-size:15px;margin-bottom:14px}
+.overall b{font-weight:700}
+ol.lines{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.line{border:1px solid var(--line);border-radius:10px;padding:10px 14px 12px;background:var(--surface)}
+.cue{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.cue select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;font-size:13px}
+.tonedot{width:9px;height:9px;border-radius:50%;display:inline-block;background:hsl(var(--h) 65% 55%)}
+.energy{display:inline-flex;gap:2px;align-items:flex-end;height:18px}
+.energy button{width:6px;border:0;padding:0;border-radius:2px;background:var(--line)}
+.energy button.on{background:var(--accent)}
+.cue input.note{flex:1 1 200px;min-width:0;border:0;border-bottom:1px dashed var(--line);background:transparent;padding:3px 2px;font-size:14px;color:var(--muted);font-style:italic}
+.cue input.note:focus{color:var(--ink);outline:none;border-bottom-color:var(--accent)}
+.words{margin:0;font-size:20px;line-height:1.75}
+.w{cursor:pointer;border-radius:4px;padding:0 1px}
+.w:hover{background:var(--chip)}
+.w.e1{color:var(--emph);font-weight:700;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}
+.w.e2{color:var(--emph);font-weight:700;letter-spacing:.05em;text-decoration:underline wavy;text-decoration-thickness:1.5px;text-underline-offset:5px}
+.pm{color:var(--pause);font-family:var(--f-mono);font-weight:600;font-size:.8em;margin:0 3px}
+.pm.l::after{content:" breath";font-family:var(--f-body);font-size:.7em;font-weight:500;vertical-align:super}
+.startrow{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap}
+.btn.big{padding:12px 20px;font-size:17px}
+.empty{color:var(--muted);text-align:center;padding:40px 10px;display:grid;gap:12px;justify-items:center}
+
+/* Stage: deliberately dark in both themes */
+#prompter{position:fixed;inset:0;background:var(--stage);color:var(--stage-ink);display:flex;flex-direction:column;z-index:10;color-scheme:dark}
+.stage{flex:1;position:relative;overflow:hidden}
+.mirrorwrap{position:absolute;inset:0}
+.mirrorwrap.mirror{transform:scaleX(-1)}
+.scroller{position:absolute;left:0;right:0;top:0;padding:38vh max(16px,6vw) 70vh;transition:transform .45s cubic-bezier(.2,.7,.2,1);will-change:transform}
+.focus{position:absolute;left:0;right:0;top:38%;height:0;border-top:1px dashed var(--stage-line);pointer-events:none}
+.focus::before{content:"";position:absolute;left:8px;top:-7px;border:7px solid transparent;border-left-color:var(--stage-emph)}
+.pl{max-width:1100px;margin:0 auto 0.9em;font-size:var(--size,44px);line-height:1.42;font-family:var(--f-body);font-weight:500}
+.pl .pcue{font-size:max(14px,calc(var(--size,44px)*.34));font-weight:500;color:var(--stage-dim);display:flex;gap:.7em;align-items:center;flex-wrap:wrap;line-height:1.3;margin-bottom:.25em;font-family:var(--f-body)}
+.pl .pcue .tn{color:hsl(var(--h) 80% 72%);font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:.85em}
+.pl .pcue i{font-style:italic;color:#a9a8bd}
+.pl.cur .pcue{color:#b7b6c8}
+.pl:not(.cur){opacity:.5}
+.pl.done{opacity:.28}
+.pw{border-radius:.15em;padding:0 .04em;cursor:pointer;transition:color .2s,background .2s}
+.pw.e1{color:var(--stage-emph);font-weight:700;text-decoration:underline;text-decoration-thickness:.07em;text-underline-offset:.16em}
+.pw.e2{color:var(--stage-emph);font-weight:700;letter-spacing:.06em;text-decoration:underline wavy;text-decoration-thickness:.05em;text-underline-offset:.2em}
+.pw.said{color:var(--stage-dim)}
+.pw.said.e1,.pw.said.e2{color:#9b7d45}
+.pw.now{background:rgba(245,182,66,.2);box-shadow:0 0 0 .08em rgba(245,182,66,.35)}
+.pp{color:var(--stage-pause);font-family:var(--f-mono);font-weight:600;font-size:.7em;margin:0 .18em;display:inline-block}
+.pp.l::after{content:"breath";font-family:var(--f-body);font-size:.42em;vertical-align:super;margin-left:.15em;font-weight:500}
+.pp.hold{animation:hold 1s ease-in-out infinite}
+@keyframes hold{50%{color:#fff;text-shadow:0 0 .3em var(--stage-pause)}}
+@media (prefers-reduced-motion:reduce){.scroller{transition:none}.pp.hold{animation:none;color:#fff}}
+
+.hud{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--stage-line);border-top:1px solid var(--stage-line)}
+.hcell{background:var(--stage-panel);padding:8px 12px;min-width:0}
+.hcell .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--stage-dim);font-weight:700}
+.hcell .v{font-family:var(--f-mono);font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcell .v small{font-size:12px;color:var(--stage-dim)}
+.pill{display:inline-block;font-family:var(--f-body);font-size:12px;font-weight:700;padding:0 7px;border-radius:99px;margin-left:6px;vertical-align:middle;background:var(--stage-line)}
+.pill.ok{color:var(--stage-ok)} .pill.warn{color:var(--stage-warn)} .pill.bad{color:var(--stage-bad)}
+.meter{height:8px;background:var(--stage-line);border-radius:4px;overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;width:0;background:var(--stage-ok);transition:width .08s}
+.tip{grid-column:1/-1;background:var(--stage-panel);padding:8px 14px;font-size:18px;font-weight:500;min-height:42px}
+.tip.warn{color:var(--stage-warn)} .tip.bad{color:var(--stage-bad)} .tip.ok{color:var(--stage-ok)}
+@media (max-width:720px){.hud{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--stage-panel);border-top:1px solid var(--stage-line)}
+.cbtn{background:#252636;border:1px solid var(--stage-line);color:var(--stage-ink);border-radius:8px;padding:8px 12px;font-size:14px}
+.cbtn:hover{border-color:#4a4b60}
+.cbtn.play{background:var(--stage-emph);color:#1d1405;border-color:var(--stage-emph);font-weight:700;min-width:92px}
+.cbtn[aria-pressed="true"]{background:#3a3b52}
+.cgroup{display:flex;align-items:center;gap:6px;font-size:13px;color:#a9a8bd}
+.cgroup select{background:#252636;border:1px solid var(--stage-line);border-radius:8px;padding:7px 8px;color:var(--stage-ink)}
+.cgroup input[type=range]{width:110px;accent-color:var(--stage-emph)}
+.cgroup output{font-family:var(--f-mono);min-width:3ch;color:var(--stage-ink)}
+.controls .spacer{flex:1}
+.notice{position:absolute;left:50%;top:16px;transform:translateX(-50%);background:#2a2230;border:1px solid #5a3b45;color:#ffd7cf;padding:10px 14px;border-radius:8px;font-size:14px;max-width:min(560px,calc(100% - 32px));z-index:2}
+.summary{position:absolute;right:16px;top:16px;background:var(--stage-panel);border:1px solid var(--stage-line);border-radius:10px;padding:14px 16px;font-size:14px;z-index:2;max-width:300px}
+.summary h3{margin:0 0 6px;font-family:var(--f-display);font-size:16px}
+.summary div{display:flex;justify-content:space-between;gap:16px;font-family:var(--f-mono);font-size:13px}
+</style>
+</head>
+<body>
+
+
+<div class="wrap" id="prep">
+  <header class="top">
+    <div class="brand"><span class="tally" aria-hidden="true"></span>
+      <div><h1><a class="back" id="backHub" href="/" hidden>← Hub</a>U2BER Voice Coach</h1><p>Mark stress, pauses and tone on your script, then read it back with live coaching</p></div>
+    </div>
+    <button class="btn primary big" id="btnStartTop">Start prompter →</button>
+  </header>
+
+  <div class="library" id="library" hidden>
+    <label class="label" for="scriptSel" style="margin:0">Script</label>
+    <select id="scriptSel"></select>
+    <button class="btn small" id="btnNew">New script</button>
+    <button class="btn small danger" id="btnDelete">Delete</button>
+    <span class="spacer"></span>
+    <span class="save" id="saveState" role="status"></span>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <label class="label" for="titleIn" id="titleLbl">Title</label>
+      <input id="titleIn" type="text" placeholder="Untitled script">
+      <label class="label" for="scriptIn">Script</label>
+      <textarea id="scriptIn" spellcheck="false" placeholder="Paste your script here — Hinglish, Hindi or English"></textarea>
+      <div class="syntax">
+        <span><code>*word*</code> stress &nbsp; <code>**word**</code> stretch it, slow and heavy</span>
+        <span><code>/</code> short pause &nbsp; <code>//</code> long pause (breath)</span>
+        <span><code>{excited|fast|smile here}</code> at the start of a line: tone, pace, note</span>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btnAI" hidden>Add cues with AI</button>
+        <button class="btn" id="btnBasic">Apply cues</button>
+        <button class="btn" id="btnImport">Import JSON</button>
+        <button class="btn" id="btnExport">Export JSON</button>
+        <input type="file" id="fileIn" accept=".json,application/json" hidden>
+      </div>
+      <div class="status" id="aiStatus" role="status"></div>
+    </section>
+
+    <section>
+      <div class="annot-head">
+        <h2>Cued script <span class="tag" id="exampleTag">Sample</span></h2>
+        <div class="tools">Tap a word to change it:
+          <span class="seg" role="group" aria-label="Edit tool">
+            <button id="toolEmph" aria-pressed="true">Stress</button>
+            <button id="toolPause" aria-pressed="false">Pause</button>
+          </span>
+          <button class="btn small" id="btnCopy">Copy marked script</button>
+        </div>
+      </div>
+      <div class="legend">
+        <span><b style="color:var(--emph);text-decoration:underline;text-underline-offset:3px">stress</b> = hit this word</span>
+        <span><b style="color:var(--emph);text-decoration:underline wavy;text-underline-offset:4px;letter-spacing:.05em">stretch</b> = slow and heavy</span>
+        <span><span class="pm">/</span> short pause</span>
+        <span><span class="pm">//</span> take a breath</span>
+      </div>
+      <div class="overall" id="overall" hidden></div>
+      <ol class="lines" id="lines"></ol>
+      <div class="startrow"><button class="btn primary big" id="btnStart">Start prompter →</button></div>
+    </section>
+  </div>
+</div>
+
+<section id="prompter" hidden aria-label="Teleprompter">
+  <div class="stage" id="stage">
+    <div class="mirrorwrap" id="mirrorwrap"><div class="scroller" id="scroller"></div></div>
+    <div class="focus" aria-hidden="true"></div>
+    <div class="notice" id="notice" hidden></div>
+    <div class="summary" id="summary" hidden></div>
+  </div>
+  <div class="hud" id="hud" hidden>
+    <div class="hcell"><div class="k">Pace</div><div class="v" id="hWpm">— <small>wpm</small></div></div>
+    <div class="hcell"><div class="k">Volume</div><div class="meter"><i id="hVol"></i></div></div>
+    <div class="hcell"><div class="k">Pitch range</div><div class="v" id="hPitch">—</div></div>
+    <div class="hcell"><div class="k">Stress hit</div><div class="v" id="hEmph">0/0</div></div>
+    <div class="hcell"><div class="k">Pauses taken</div><div class="v" id="hPause">0/0</div></div>
+    <div class="tip" id="hTip">Start speaking — the script will follow you.</div>
+  </div>
+  <div class="controls">
+    <button class="cbtn play" id="cPlay">▶ Start</button>
+    <button class="cbtn" id="cRestart" title="Back to the top">⏮</button>
+    <div class="cgroup"><label for="cMode">Mode</label>
+      <select id="cMode"><option value="auto">Auto scroll</option><option value="voice">Voice follow + feedback</option></select></div>
+    <div class="cgroup" id="langGroup"><label for="cLang">Mic language</label>
+      <select id="cLang"><option value="hi-IN">Hindi / Hinglish</option><option value="en-IN">English (India)</option></select></div>
+    <div class="cgroup"><label for="cWpm">Speed</label><input type="range" id="cWpm" min="80" max="220" step="5"><output id="oWpm"></output></div>
+    <div class="cgroup"><label for="cSize">Size</label><input type="range" id="cSize" min="24" max="96" step="2"><output id="oSize"></output></div>
+    <button class="cbtn" id="cMirror" aria-pressed="false">Mirror</button>
+    <button class="cbtn" id="cFull">Full screen</button>
+    <span class="spacer"></span>
+    <button class="cbtn" id="cExit">← Back to script</button>
+  </div>
+</section>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+/* HUB = running inside tools.u2berclub.com (account storage). Otherwise: Claude artifact (AI + browser storage). */
+const HUB=/^\/voicecoach/.test(location.pathname);
+const FORMAT="u2ber-voicecoach";
+
+const TONES={
+  warm:{l:"Warm",h:28}, curious:{l:"Curious",h:265}, excited:{l:"Excited",h:12},
+  serious:{l:"Serious",h:215}, emotional:{l:"Emotional",h:330}, confident:{l:"Confident",h:150},
+  funny:{l:"Playful",h:48}, urgent:{l:"Urgent",h:0}, calm:{l:"Calm",h:185}
+};
+const PACES={slow:{l:"Slow",m:.8},normal:{l:"Normal",m:1},fast:{l:"Fast",m:1.2}};
+const TONE_ALIAS={warm:"warm",apnapan:"warm",curious:"curious",raaz:"curious",excited:"excited",josh:"excited",serious:"serious",gambhir:"serious",emotional:"emotional",confident:"confident",funny:"funny",playful:"funny",mazaak:"funny",urgent:"urgent",calm:"calm",shaant:"calm"};
+const PACE_ALIAS={slow:"slow",dheere:"slow",normal:"normal",fast:"fast",tez:"fast"};
+
+const SAMPLE_TITLE="Sample: fixing my delivery";
+const SAMPLE=`{curious|slow|Look straight into the lens, like you're sharing a secret}
+Pichhle saal maine ek *galti* ki thi, / jo shayad aap bhi *abhi* kar rahe ho. //
+{serious|normal|Let a little frustration come through}
+Main roz content bana raha tha, / lekin log koi bhi video *end tak* dekh hi nahi rahe the. //
+{emotional|slow|Slow down, as if you're talking to yourself}
+Phir ek din maine apni hi video *bina sound* ke dekhi, // aur samajh aaya ki problem script mein nahi, / meri **awaaz** mein thi. //
+{funny|fast|Imitate a flat, robotic voice}
+Har line ek hi tone mein, / ek hi speed se, / jaise koi *news* padh raha ho. //
+{confident|normal|Count the three points on your fingers}
+तो मैंने हर line पे *तीन* चीज़ें mark करना शुरू किया — / कहाँ *रुकना* है, / किस word पे *ज़ोर* देना है, / और किस *feeling* में बोलना है। //
+{excited|normal|Lift the energy, smile}
+Aur sirf *do hafte* mein meri watch time **double** ho gayi. //
+{warm|slow|Like giving advice to a friend}
+Agar aap bhi chahte ho ki log aapki baat *end tak* sunein, / to agli video se yeh *ek baar* try karke dekho. //`;
+const SAMPLE_OVERALL="Open slow and secretive, bring humour into the robot line, and save your energy peak for \"double\". Close warm and calm, like advice to a friend.";
+
+/* ---------- state ---------- */
+const DEF_SET={wpm:140,size:46,mirror:false,mode:"auto",lang:"hi-IN"};
+let set=Object.assign({},DEF_SET);
+let scripts={};      // id -> doc
+let curId=null;
+let tool="emph";
+const LS_KEY=HUB?"u2ber.voicecoach.cache.v1":"u2ber.voicecoach.artifact.v1";
+const newId=()=>"s_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const cur=()=>scripts[curId];
+function mkDoc(title,script,lines,overall,sample){return {format:FORMAT,version:1,title:title||"Untitled script",script:script||"",overall:overall||"",lines:lines||[],sample:!!sample,dirty:false,updatedAt:new Date().toISOString()}}
+
+function cacheLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify({scripts,curId,set}))}catch(e){}}
+function readLocal(){try{const o=JSON.parse(localStorage.getItem(LS_KEY)||"null");return o&&typeof o==="object"?o:null}catch(e){return null}}
+
+/* account storage (hub only): /api/data/voicecoach — one row per script, plus "_settings" */
+const API="/api/data/voicecoach";
+const pending=new Set(); let syncT=null;
+function setSave(t,err){const el=$("#saveState");if(!el)return;el.textContent=t;el.className="save"+(err?" err":"")}
+function touch(id){
+  const d=scripts[id]; if(!d) return; d.updatedAt=new Date().toISOString();
+  cacheLocal();
+  if(!HUB) return;
+  pending.add(id); setSave("Saving…"); clearTimeout(syncT); syncT=setTimeout(flush,900);
+}
+async function flush(){
+  if(!HUB||!pending.size) return;
+  const body={}; pending.forEach(id=>{ if(id==="_settings") body._settings=set; else if(scripts[id]) body[id]=scripts[id]; }); pending.clear();
+  try{
+    const r=await fetch(API,{method:"PUT",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(r.status);
+    const now=new Date().toISOString(); Object.keys(body).forEach(k=>{if(scripts[k])scripts[k].syncedAt=now}); cacheLocal();
+    setSave("Saved to your account");
+  }catch(e){Object.keys(body).forEach(k=>pending.add(k));setSave("Not saved yet — kept in this browser, will retry",true);clearTimeout(syncT);syncT=setTimeout(flush,8000)}
+}
+function saveSettings(){cacheLocal(); if(HUB){pending.add("_settings");clearTimeout(syncT);syncT=setTimeout(flush,900)}}
+async function removeScript(id){
+  delete scripts[id]; cacheLocal();
+  if(HUB){try{await fetch(API+"/"+encodeURIComponent(id),{method:"DELETE",credentials:"include"})}catch(e){}}
+}
+window.addEventListener("beforeunload",()=>{if(HUB&&pending.size){const body={};pending.forEach(id=>{if(id==="_settings")body._settings=set;else if(scripts[id])body[id]=scripts[id]});try{fetch(API,{method:"PUT",credentials:"include",keepalive:true,headers:{"content-type":"application/json"},body:JSON.stringify(body)})}catch(e){}}});
+
+/* ---------- parsing ---------- */
+const LETTER=/[\p{L}\p{N}]/u;
+let pendingDir=null;
+function parseScript(text){
+  const out=[]; pendingDir=null;
+  text.split(/\n+/).forEach(par=>{
+    par=par.trim(); if(!par) return;
+    let tone="warm",pace="normal",note="",energy=3,hasDir=false;
+    const m=par.match(/^\{([^}]*)\}\s*/);
+    if(m){hasDir=true;par=par.slice(m[0].length);
+      let gotT=false,gotP=false;
+      m[1].split("|").map(s=>s.trim()).forEach(p=>{const parts=p.toLowerCase().split(/\s+/),k=parts[0],short=parts.length<=2;
+        if(short&&!gotT&&TONE_ALIAS[k]){tone=TONE_ALIAS[k];gotT=true}
+        else if(short&&!gotP&&PACE_ALIAS[k]){pace=PACE_ALIAS[k];gotP=true}
+        else if(p) note=note?note+" "+p:p;});
+      if(!par){pendingDir={tone,pace,note};return}
+    } else if(pendingDir){({tone,pace,note}=pendingDir);hasDir=true}
+    pendingDir=null;
+    const words=[];let open=0;
+    par.split(/\s+/).forEach(tok=>{
+      if(!tok) return;
+      if(/^\/+$/.test(tok)){if(words.length) words[words.length-1].pause=Math.max(words[words.length-1].pause,tok.length>=2?2:1);return}
+      let pz=0;const pm=tok.match(/(\/+)$/);if(pm){pz=pm[1].length>=2?2:1;tok=tok.slice(0,-pm[1].length)}
+      const lead=(tok.match(/^\*+/)||[""])[0].length; tok=tok.slice(lead);
+      let trail=0;const tm=tok.match(/\*+(?=[^\p{L}\p{N}*]*$)/u);
+      if(tm){trail=tm[0].length;tok=tok.slice(0,tm.index)+tok.slice(tm.index+trail)}
+      if(lead) open=Math.min(lead,2);
+      const lvl=open;
+      if(trail) open=0;
+      if(!tok){ if(pz&&words.length) words[words.length-1].pause=pz; return}
+      if(!LETTER.test(tok)){ if(words.length){words[words.length-1].t+=" "+tok; if(pz) words[words.length-1].pause=pz} return}
+      words.push({t:tok,emph:lvl,pause:pz});
+    });
+    let cur=[];
+    const flushL=()=>{if(cur.length){out.push({words:cur,tone,pace,energy,note,user:hasDir});cur=[]}};
+    words.forEach((w,i)=>{cur.push(w);
+      const end=/[.!?।|]["'”’)]*$/.test(w.t);
+      if(end&&i<words.length-1) flushL();
+      else if(cur.length>=22&&/[,;—–-]$/.test(w.t)) flushL();});
+    flushL();
+  });
+  pendingDir=null;
+  return out;
+}
+function serialize(lines){
+  return lines.map(L=>{
+    const d=`{${L.tone}|${L.pace}${L.note?"|"+L.note:""}}`;
+    const body=L.words.map(w=>{let t=w.t;if(w.emph===1)t="*"+t+"*";if(w.emph===2)t="**"+t+"**";if(w.pause===1)t+=" /";if(w.pause===2)t+=" //";return t}).join(" ");
+    return d+"\n"+body;
+  }).join("\n");
+}
+
+/* ---------- basic cues (no AI) ---------- */
+const STRESS=new Set("sirf bas kabhi never only sabse hamesha galti problem secret raaz double zero pehli pehla last asli sach bilkul nahi mat zaroor seedha best worst biggest real truth always सिर्फ कभी सबसे हमेशा ग़लती गलती राज़ असली सच बिल्कुल नहीं ज़रूर पहली".split(" "));
+function basicCues(lines){
+  lines.forEach(L=>{
+    if(!L.words.some(w=>w.emph||w.pause)){
+      L.words.forEach(w=>{
+        if(/[,;:]$/.test(w.t)||/[—–-]$/.test(w.t)) w.pause=1;
+        if(/[.!?।]["'”’)]*$/.test(w.t)) w.pause=2;
+      });
+      let n=0;
+      L.words.forEach(w=>{if(n>=2)return;const k=w.t.toLowerCase().replace(/[^\p{L}\p{N}]/gu,"");
+        if(/\d/.test(k)||STRESS.has(k)||(w.t.length>2&&w.t===w.t.toUpperCase()&&/[A-Z]/.test(w.t))){w.emph=1;n++}});
+    }
+    if(!L.user){const last=L.words[L.words.length-1]?.t||"";
+      if(/\?/.test(last)) L.tone="curious"; else if(/!/.test(last)){L.tone="excited";L.energy=4}}
+  });
+  return lines;
+}
+
+/* ---------- JSON import / export ---------- */
+const s_=(v,max)=>(v==null?"":String(v)).slice(0,max);
+function sanitizeDoc(raw){
+  if(!raw||typeof raw!=="object") throw new Error("That file isn't a Voice Coach JSON.");
+  if(raw.format!==FORMAT) throw new Error(`This JSON is missing "format": "${FORMAT}" — is it the right file?`);
+  if(!Array.isArray(raw.lines)||!raw.lines.length) throw new Error("The file has no lines in it.");
+  if(raw.lines.length>2000) throw new Error("Max 2000 lines per script.");
+  const lines=raw.lines.map(L=>({
+    tone:TONES[L.tone]?L.tone:"warm", pace:PACES[L.pace]?L.pace:"normal",
+    energy:Math.min(5,Math.max(1,Math.round(Number(L.energy)||3))), note:s_(L.note,160), user:true,
+    words:(Array.isArray(L.words)?L.words:[]).slice(0,200).map(w=>({t:s_(w&&w.t,80),emph:[0,1,2].includes(w&&w.emph)?w.emph:0,pause:[0,1,2].includes(w&&w.pause)?w.pause:0})).filter(w=>w.t)
+  })).filter(L=>L.words.length);
+  if(!lines.length) throw new Error("The file has no words in it.");
+  return mkDoc(s_(raw.title,120)||"Imported script", s_(raw.script,200000)||serialize(lines), lines, s_(raw.overall,800), false);
+}
+function exportObj(d){
+  return {format:FORMAT,version:1,title:d.title,overall:d.overall||"",exported_at:new Date().toISOString(),
+    lines:d.lines.map(L=>({tone:L.tone,pace:L.pace,energy:L.energy,note:L.note||"",words:L.words.map(w=>({t:w.t,emph:w.emph,pause:w.pause}))})),
+    script:d.script||""};
+}
+const fileName=d=>(d.title||"script").replace(/[^\p{L}\p{N}._-]+/gu,"-").replace(/^-+|-+$/g,"").slice(0,60)+".voicecoach.json";
+let dlCap=null;
+async function exportJSON(){
+  const d=cur(); if(!d||!d.lines.length){status("Nothing to export yet — apply cues first.",true);return}
+  const text=JSON.stringify(exportObj(d),null,2), name=fileName(d);
+  if(HUB){
+    const url=URL.createObjectURL(new Blob([text],{type:"application/json"}));
+    const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+    status("Exported "+name);return;
+  }
+  if(dlCap){try{await dlCap.save({filename:name,data:text});status("Saved "+name+". Import it in U2BER Voice Coach on the hub.");return}catch(e){if(e&&e.code==="declined"){status("Export cancelled.");return}}}
+  try{await navigator.clipboard.writeText(text);status("JSON copied to clipboard. Paste it into a .json file to import on the hub.")}
+  catch(e){$("#scriptIn").value=text;$("#scriptIn").select();status("JSON placed in the script box — copy it from there.")}
+}
+function importFile(file){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const doc=sanitizeDoc(JSON.parse(String(fr.result)));
+      const id=newId(); scripts[id]=doc; curId=id; touch(id); renderAll();
+      status(`Imported "${doc.title}" — ${doc.lines.length} lines.`);
+    }catch(e){status(e.message||"Couldn't read that file.",true)}
+  };
+  fr.onerror=()=>status("Couldn't read that file.",true);
+  fr.readAsText(file);
+}
+
+/* ---------- AI cues (Claude artifact only) ---------- */
+let sampleFn=null;
+if(!HUB&&window.claude&&typeof window.claude.use==="function"){
+  window.claude.use("sample").then(s=>{sampleFn=s;$("#btnAI").hidden=!s}).catch(()=>{});
+  window.claude.use("downloads").then(d=>{dlCap=d}).catch(()=>{});
+}
+function buildPrompt(batch){
+return `You are a voice and delivery coach for an Indian YouTube / Instagram Reels creator. He reads scripts from a teleprompter in Hinglish (Roman Hindi), Devanagari Hindi and English, often mixed in one line. Mark each line so he knows exactly how to deliver it on camera.
+
+For every line return:
+- tone: one of warm, curious, excited, serious, emotional, confident, funny, urgent, calm
+- pace: slow, normal or fast
+- energy: 1 to 5
+- note: one short direction in plain, simple English (max 12 words), the way a film director would say it to an actor, for example "Small smile here, like telling a friend". Mention face or body cues only when they help.
+- emph: word indexes to stress (usually 1-2, max 3): the words that carry the meaning, a contrast, a number or a surprise. Never stress filler words.
+- stretch: word indexes to say slowly and heavily for drama (rare, max 1 per line, often none).
+- pause: list of [index, "s" or "l"], meaning pause AFTER that word. "s" is a short beat (about 0.4 s), "l" is a full breath (about 1 s). Pause before a reveal, after a hook or question, between contrasting ideas and at the end of a complete thought. Do not over-pause: 1-3 per line.
+Indexes refer to the "w" array of that line, starting at 0. Do not change, translate or re-split the words.
+Also return "overall": 2-3 sentences in simple English on how to deliver the whole script (energy arc, where to peak, where to slow down).
+
+Reply with only JSON in this exact shape:
+{"overall":"...","lines":[{"i":0,"tone":"curious","pace":"slow","energy":3,"note":"...","emph":[3],"stretch":[],"pause":[[3,"s"],[9,"l"]]}]}
+
+Lines:
+${JSON.stringify(batch)}`;
+}
+function mergeAI(lines,offset,r){
+  (r.lines||[]).forEach(x=>{
+    const L=lines[offset+Number(x.i)]; if(!L) return;
+    if(!L.user){ if(TONES[x.tone]) L.tone=x.tone; if(PACES[x.pace]) L.pace=x.pace; if(typeof x.note==="string") L.note=x.note.slice(0,120)}
+    const e=Number(x.energy); if(e>=1&&e<=5) L.energy=Math.round(e);
+    (x.emph||[]).forEach(i=>{const w=L.words[i]; if(w&&!w.emph) w.emph=1});
+    (x.stretch||[]).forEach(i=>{const w=L.words[i]; if(w) w.emph=2});
+    (x.pause||[]).forEach(p=>{const w=L.words[Array.isArray(p)?p[0]:p]; if(w&&!w.pause) w.pause=(Array.isArray(p)&&p[1]==="l")?2:1});
+  });
+}
+const ERR={not_granted:"AI permission wasn't given. You can still use Apply cues.",sampling_disabled:"AI isn't available on this account.",rate_limited:"Too many requests right now — try again in a little while.",invalid_json:"Couldn't read the AI's answer. Try once more.",refused:"The AI didn't mark this script. Try Apply cues instead.",session_expired:"Please sign in again."};
+async function runAI(){
+  const btn=$("#btnAI"); const d=cur(); syncFromInputs();
+  const lines=parseScript(d.script);
+  if(!lines.length){status("Write or paste a script first.",true);return}
+  btn.disabled=true;status("Reading your script… (can take 20–60 seconds)");
+  try{
+    let overall="";
+    for(let o=0;o<lines.length;o+=50){
+      const batch=lines.slice(o,o+50).map((L,i)=>({i,w:L.words.map(w=>w.t)}));
+      if(lines.length>50) status(`Reading your script… ${Math.min(o+50,lines.length)}/${lines.length} lines`);
+      const r=await sampleFn.json(buildPrompt(batch),{modelTier:"default"});
+      mergeAI(lines,o,r); if(!overall&&r.overall) overall=String(r.overall);
+    }
+    lines.forEach(L=>L.words.forEach(w=>{if(!w.pause&&/[.!?।]["'”’)]*$/.test(w.t))w.pause=2}));
+    Object.assign(d,{lines,overall,sample:false,dirty:false}); touch(curId); renderAll();
+    status("Cues added. Tap any word to change it, then Export JSON for the hub.");
+  }catch(e){status((e&&ERR[e.code])||"Something went wrong. Try again.",true)}
+  finally{btn.disabled=false}
+}
+function runBasic(){
+  const d=cur(); syncFromInputs();
+  const lines=parseScript(d.script);
+  if(!lines.length){status("Write or paste a script first.",true);return}
+  Object.assign(d,{lines:basicCues(lines),overall:"",sample:false,dirty:false}); touch(curId); renderAll();
+  status("Cues applied: your own marks, plus a short pause at commas and a breath at sentence ends. Tap words to add more.");
+}
+
+/* ---------- prep render ---------- */
+function status(t,err){const s=$("#aiStatus");s.textContent=t;s.className="status"+(err?" err":"")}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function lineHTML(L){
+  if(!TONES[L.tone])L.tone="warm"; if(!PACES[L.pace])L.pace="normal";
+  const toneOpts=Object.entries(TONES).map(([k,v])=>`<option value="${k}"${k===L.tone?" selected":""}>${v.l}</option>`).join("");
+  const paceOpts=Object.entries(PACES).map(([k,v])=>`<option value="${k}"${k===L.pace?" selected":""}>${v.l}</option>`).join("");
+  const en=[1,2,3,4,5].map(n=>`<button type="button" data-en="${n}" class="${n<=L.energy?"on":""}" style="height:${6+n*2.4}px" aria-label="Energy ${n}"></button>`).join("");
+  const words=L.words.map((w,wi)=>`<span class="w${w.emph?" e"+w.emph:""}" data-wi="${wi}">${esc(w.t)}</span>${w.pause?`<span class="pm${w.pause===2?" l":""}">${w.pause===2?"//":"/"}</span>`:""}`).join(" ");
+  return `<div class="cue"><span class="tonedot" style="--h:${TONES[L.tone].h}"></span>
+    <select data-k="tone" aria-label="Tone">${toneOpts}</select>
+    <select data-k="pace" aria-label="Pace">${paceOpts}</select>
+    <span class="energy" title="Energy">${en}</span>
+    <input class="note" data-k="note" value="${esc(L.note||"")}" placeholder="Direction note, e.g. smile here" aria-label="Direction note"></div>
+    <p class="words">${words}</p>`;
+}
+function renderLibrary(){
+  if(!HUB) return;
+  const sel=$("#scriptSel");
+  const ids=Object.keys(scripts).sort((a,b)=>(scripts[b].updatedAt||"").localeCompare(scripts[a].updatedAt||""));
+  sel.innerHTML=ids.map(id=>`<option value="${id}"${id===curId?" selected":""}>${esc(scripts[id].title||"Untitled script")}</option>`).join("");
+}
+function renderPrep(){
+  const d=cur();
+  $("#titleIn").value=d.title||""; $("#scriptIn").value=d.script||"";
+  $("#exampleTag").hidden=!d.sample;
+  const ov=$("#overall"); ov.hidden=!d.overall; ov.innerHTML=d.overall?`<b>How to deliver the whole script:</b> ${esc(d.overall)}`:"";
+  const ol=$("#lines");
+  if(!d.lines.length){ol.innerHTML=`<li class="empty"><span>No cues yet. Paste a script, then press <b>Apply cues</b> — or import a JSON you exported from Claude.</span></li>`;return}
+  ol.innerHTML=d.lines.map((L,li)=>`<li class="line" data-li="${li}">${lineHTML(L)}</li>`).join("");
+}
+function renderAll(){renderLibrary();renderPrep()}
+function rerenderLine(li){const el=document.querySelector(`.line[data-li="${li}"]`);if(el)el.innerHTML=lineHTML(cur().lines[li])}
+function syncFromInputs(){const d=cur();d.title=$("#titleIn").value.trim()||"Untitled script";d.script=$("#scriptIn").value}
+
+$("#lines").addEventListener("click",e=>{
+  const li=e.target.closest(".line")?.dataset.li; if(li==null) return; const L=cur().lines[li];
+  const w=e.target.closest(".w");
+  if(w){const W=L.words[w.dataset.wi]; if(tool==="emph") W.emph=(W.emph+1)%3; else W.pause=(W.pause+1)%3; rerenderLine(li);touch(curId);return}
+  const en=e.target.closest("[data-en]"); if(en){L.energy=Number(en.dataset.en);rerenderLine(li);touch(curId)}
+});
+$("#lines").addEventListener("change",e=>{const li=e.target.closest(".line")?.dataset.li;const k=e.target.dataset.k;if(li==null||!k)return;cur().lines[li][k]=e.target.value;if(k!=="note")rerenderLine(li);touch(curId)});
+$("#lines").addEventListener("input",e=>{if(e.target.dataset.k==="note"){const li=e.target.closest(".line").dataset.li;cur().lines[li].note=e.target.value;touch(curId)}});
+function setTool(t){tool=t;$("#toolEmph").setAttribute("aria-pressed",t==="emph");$("#toolPause").setAttribute("aria-pressed",t==="pause")}
+$("#toolEmph").onclick=()=>setTool("emph");$("#toolPause").onclick=()=>setTool("pause");
+$("#btnAI").onclick=runAI;$("#btnBasic").onclick=runBasic;
+$("#btnExport").onclick=exportJSON;
+$("#btnImport").onclick=()=>$("#fileIn").click();
+$("#fileIn").onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)importFile(f);e.target.value=""};
+$("#scriptIn").addEventListener("input",()=>{const d=cur();d.script=$("#scriptIn").value;if(!d.dirty&&d.lines.length){d.dirty=true;status(HUB?"Script changed — press Apply cues to update the cued lines.":"Script changed — add cues again to update the cued lines.")}touch(curId)});
+$("#titleIn").addEventListener("input",()=>{cur().title=$("#titleIn").value.trim()||"Untitled script";touch(curId);renderLibrary()});
+$("#btnCopy").onclick=async()=>{const t=serialize(cur().lines);try{await navigator.clipboard.writeText(t);$("#btnCopy").textContent="Copied"}catch(e){$("#scriptIn").value=t;$("#scriptIn").select();$("#btnCopy").textContent="Placed in script box"}setTimeout(()=>$("#btnCopy").textContent="Copy marked script",1800)};
+$("#scriptSel").onchange=e=>{curId=e.target.value;cacheLocal();renderPrep();status("")};
+$("#btnNew").onclick=()=>{const id=newId();scripts[id]=mkDoc("Untitled script","",[],"",false);curId=id;touch(id);renderAll();$("#titleIn").focus();status("")};
+let delArm=0;
+$("#btnDelete").onclick=async()=>{
+  const b=$("#btnDelete");
+  if(Date.now()-delArm>3000){delArm=Date.now();b.textContent="Tap again to delete";setTimeout(()=>{b.textContent="Delete"},3000);return}
+  delArm=0;b.textContent="Delete";
+  await removeScript(curId);
+  const ids=Object.keys(scripts);
+  if(!ids.length){const id=newId();scripts[id]=mkDoc(SAMPLE_TITLE,SAMPLE,parseScript(SAMPLE),SAMPLE_OVERALL,true);curId=id;touch(id)} else curId=ids[0];
+  cacheLocal();renderAll();status("Script deleted.");
+};
+
+/* ---------- transliteration + fuzzy match (voice follow) ---------- */
+const DV_V={"अ":"a","आ":"aa","इ":"i","ई":"ee","उ":"u","ऊ":"oo","ऋ":"ri","ए":"e","ऐ":"ai","ओ":"o","औ":"au","ऑ":"o"};
+const DV_M={"ा":"aa","ि":"i","ी":"ee","ु":"u","ू":"oo","ृ":"ri","े":"e","ै":"ai","ो":"o","ौ":"au","ॉ":"o","ॅ":"e"};
+const DV_C={"क":"k","ख":"kh","ग":"g","घ":"gh","ङ":"n","च":"ch","छ":"chh","ज":"j","झ":"jh","ञ":"n","ट":"t","ठ":"th","ड":"d","ढ":"dh","ण":"n","त":"t","थ":"th","द":"d","ध":"dh","न":"n","प":"p","फ":"ph","ब":"b","भ":"bh","म":"m","य":"y","र":"r","ल":"l","व":"v","श":"sh","ष":"sh","स":"s","ह":"h","ळ":"l"};
+function translit(s){let o="",pa=false;
+  for(const ch of s){
+    if(ch==="़") continue;
+    if(DV_C[ch]){if(pa)o+="a";o+=DV_C[ch];pa=true;continue}
+    if(DV_M[ch]){o+=DV_M[ch];pa=false;continue}
+    if(ch==="्"){pa=false;continue}
+    if(ch==="ं"||ch==="ँ"){if(pa)o+="a";o+="n";pa=false;continue}
+    if(ch==="ः"){if(pa)o+="a";o+="h";pa=false;continue}
+    if(pa){o+="a";pa=false}
+    o+=DV_V[ch]||ch;
+  }
+  return o;}
+function keyOf(w){let s=w.toLowerCase();if(/[ऀ-ॿ]/.test(s))s=translit(s);
+  return s.replace(/[^a-z0-9]/g,"").replace(/aa/g,"a").replace(/ee|ii/g,"i").replace(/oo|uu/g,"u").replace(/w/g,"v").replace(/z/g,"j").replace(/ph/g,"f").replace(/q/g,"k").replace(/ck/g,"k").replace(/c(?!h)/g,"k").replace(/x/g,"ks")
+   .replace(/([bcdfgjklmnpqrstvy])h/g,"$1").replace(/(.)\1+/g,"$1");}
+function lev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,i)=>i);
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
+function sim(a,b){if(!a||!b)return 0;if(a===b)return 1;if(Math.min(a.length,b.length)<=2)return 0;return 1-lev(a,b)/Math.max(a.length,b.length)}
+
+/* ---------- prompter ---------- */
+let flat=[], cursor=0, playing=false, timer=null, wakeLock=null;
+function lines(){return cur().lines}
+function buildPrompter(){
+  const sc=$("#scroller"); flat=[];
+  sc.innerHTML=lines().map((L,li)=>{
+    const t=TONES[L.tone]||TONES.warm; if(!PACES[L.pace])L.pace="normal";
+    const cue=`<div class="pcue"><span class="tn" style="--h:${t.h}">${t.l}</span><span>${PACES[L.pace].l}</span>${L.note?`<i>${esc(L.note)}</i>`:""}</div>`;
+    const ws=L.words.map((w,wi)=>`<span class="pw${w.emph?" e"+w.emph:""}" data-li="${li}" data-wi="${wi}">${esc(w.t)}</span>${w.pause?`<span class="pp${w.pause===2?" l":""}">${w.pause===2?"//":"/"}</span>`:""}`).join(" ");
+    return `<div class="pl" data-li="${li}">${cue}<div>${ws}</div></div>`;
+  }).join("");
+  sc.querySelectorAll(".pw").forEach(el=>{const li=+el.dataset.li,wi=+el.dataset.wi,w=lines()[li].words[wi];
+    flat.push({li,wi,el,w,key:keyOf(w.t),pEl:el.nextElementSibling&&el.nextElementSibling.classList.contains("pp")?el.nextElementSibling:null})});
+  applySettings();
+}
+function applySettings(){
+  $("#scroller").style.setProperty("--size",set.size+"px");
+  $("#mirrorwrap").classList.toggle("mirror",!!set.mirror);
+  $("#cMirror").setAttribute("aria-pressed",!!set.mirror);
+  $("#cWpm").value=set.wpm;$("#oWpm").textContent=set.wpm;
+  $("#cSize").value=set.size;$("#oSize").textContent=set.size;
+  $("#cMode").value=set.mode;$("#cLang").value=set.lang;
+  $("#langGroup").hidden=set.mode!=="voice";
+}
+function paint(){
+  let curLi=-1;
+  flat.forEach((f,i)=>{f.el.classList.toggle("said",i<cursor);f.el.classList.toggle("now",i===cursor)});
+  if(flat[cursor]) curLi=flat[cursor].li; else if(flat.length) curLi=flat[flat.length-1].li;
+  document.querySelectorAll(".pl").forEach(pl=>{const li=+pl.dataset.li;pl.classList.toggle("cur",li===curLi);pl.classList.toggle("done",li<curLi)});
+  scrollToCur();
+}
+function scrollToCur(){
+  const f=flat[Math.min(cursor,flat.length-1)]; if(!f) return;
+  const y=f.el.offsetTop+f.el.offsetHeight/2-$("#stage").clientHeight*.38;
+  $("#scroller").style.transform=`translateY(${-Math.max(0,y)}px)`;
+}
+function setCursor(i){cursor=Math.max(0,Math.min(i,flat.length));paint()}
+function lineStart(dir){
+  const curLi=flat[Math.min(cursor,flat.length-1)]?.li??0;const tgt=Math.max(0,Math.min(lines().length-1,curLi+dir));
+  const idx=flat.findIndex(f=>f.li===tgt); if(idx>=0){setCursor(idx);committed=idx}
+}
+
+/* auto scroll */
+function autoStep(){
+  if(!playing) return;
+  if(cursor>=flat.length){stop();return}
+  const f=flat[cursor], L=lines()[f.li];
+  const base=60000/(set.wpm*PACES[L.pace].m);
+  const dur=base*(f.w.emph===1?1.15:f.w.emph===2?1.6:1)*(0.75+Math.min(f.w.t.length,12)/24);
+  paint();
+  timer=setTimeout(()=>{
+    let gap=0;
+    if(f.w.pause) gap=f.w.pause===2?1000:450;
+    const next=flat[cursor+1]; if(next&&next.li!==f.li) gap+=250;
+    if(gap&&f.pEl) f.pEl.classList.add("hold");
+    cursor++; if(gap){flat.forEach((x,i)=>x.el.classList.toggle("said",i<cursor));flat[cursor-1].el.classList.remove("now")}
+    timer=setTimeout(()=>{if(f.pEl)f.pEl.classList.remove("hold");autoStep()},gap);
+  },dur);
+}
+
+/* voice follow */
+let rec=null, recActive=false, committed=0, audio=null, rafId=0;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function notice(msg){const n=$("#notice");n.textContent=msg;n.hidden=!msg}
+function matchFrom(base,words){
+  let pos=base;
+  words.forEach(r=>{const k=keyOf(r);if(!k)return;let best=-1,bs=0;
+    for(let j=pos;j<Math.min(pos+8,flat.length);j++){const s=sim(k,flat[j].key)-0.03*(j-pos);if(s>bs){bs=s;best=j}}
+    if(best>=0&&bs>=0.58) pos=best+1;});
+  return pos;
+}
+function onAdvance(from,to){
+  const now=performance.now();
+  for(let i=from;i<to;i++){spokenAt[i]=now;
+    const f=flat[i];
+    if(f.w.emph) checkEmph(f,now);
+    if(i>0&&flat[i-1].w.pause&&spokenAt[i-1]) checkPause(flat[i-1],spokenAt[i-1],now);
+  }
+}
+async function startVoice(){
+  notice("");
+  if(!SR){notice("This browser has no speech recognition. Open it in Chrome or Edge, or use Auto scroll.");return false}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const src=ctx.createMediaStreamSource(stream);const an=ctx.createAnalyser();an.fftSize=2048;src.connect(an);
+    audio={stream,ctx,an,buf:new Float32Array(2048)};
+  }catch(e){
+    notice(HUB?"Microphone access is blocked. Allow the mic for this site in your browser settings, or use Auto scroll.":"The microphone is blocked in this preview. Open the tool on the hub (tools.u2berclub.com), or use Auto scroll.");return false}
+  rec=new SR();rec.lang=set.lang;rec.continuous=true;rec.interimResults=true;
+  rec.onresult=ev=>{
+    let interim=[];
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const r=ev.results[i];const words=r[0].transcript.trim().split(/\s+/).filter(Boolean);
+      if(r.isFinal){committed=matchFrom(committed,words);if(committed>cursor){onAdvance(cursor,committed);cursor=committed}}
+      else interim=interim.concat(words);
+    }
+    if(interim.length){const t=matchFrom(committed,interim);if(t>cursor){onAdvance(cursor,t);cursor=t}}
+    paint();
+  };
+  rec.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){notice("Microphone or speech service isn't allowed. Allow the mic in your browser settings.");stop()}};
+  rec.onend=()=>{if(recActive){try{rec.start()}catch(e){}}};
+  recActive=true;committed=cursor;
+  try{rec.start()}catch(e){}
+  resetStats();$("#hud").hidden=false;$("#summary").hidden=true;
+  loopAudio();
+  return true;
+}
+function stopVoice(){
+  recActive=false; if(rec){try{rec.stop()}catch(e){}rec=null}
+  cancelAnimationFrame(rafId);
+  if(audio){audio.stream.getTracks().forEach(t=>t.stop());try{audio.ctx.close()}catch(e){}audio=null}
+}
+
+/* live feedback */
+let spokenAt=[], samples=[], pitches=[], stats, lastTip={t:0};
+const clean=t=>t.replace(/[^\p{L}\p{N}]/gu,"");
+function resetStats(){spokenAt=[];samples=[];pitches=[];stats={eHit:0,eTot:0,pHit:0,pTot:0,inRange:0,rangeN:0,wpmSum:0,wpmN:0};updHud()}
+function rms(buf){let s=0;for(let i=0;i<buf.length;i++)s+=buf[i]*buf[i];return Math.sqrt(s/buf.length)}
+function pitchOf(buf,sr){
+  const minL=Math.floor(sr/400),maxL=Math.floor(sr/75);let best=0,bl=-1;const N=1024;
+  for(let l=minL;l<=maxL;l++){let c=0;for(let i=0;i<N;i++)c+=buf[i]*buf[i+l];if(c>best){best=c;bl=l}}
+  let e=0;for(let i=0;i<N;i++)e+=buf[i]*buf[i];
+  return (bl>0&&best/e>0.45)?sr/bl:0;
+}
+let frame=0;
+function loopAudio(){
+  if(!audio) return;
+  const {an,buf,ctx}=audio; an.getFloatTimeDomainData(buf);
+  const now=performance.now(), v=rms(buf);
+  samples.push([now,v]); while(samples.length&&samples[0][0]<now-12000) samples.shift();
+  const speaking=v>Math.max(0.008,noiseFloor()*2.5);
+  $("#hVol").style.width=Math.min(100,Math.sqrt(v)*260)+"%";
+  if(speaking&&(frame%3===0)){const p=pitchOf(buf,ctx.sampleRate);if(p)pitches.push([now,p])}
+  frame++;
+  while(pitches.length&&pitches[0][0]<now-6000) pitches.shift();
+  if(frame%15===0) updHud();
+  rafId=requestAnimationFrame(loopAudio);
+}
+function noiseFloor(){if(samples.length<20)return 0.005;const a=samples.map(s=>s[1]).sort((x,y)=>x-y);return a[Math.floor(a.length*.15)]}
+function speakLevel(t0,t1){const fl=noiseFloor();return samples.filter(s=>s[0]>=t0&&s[0]<=t1&&s[1]>fl*2.5).map(s=>s[1])}
+function checkEmph(f,now){
+  const win=speakLevel(now-1500,now-150), base=speakLevel(now-9000,now);
+  if(win.length<3||base.length<10) return;
+  const peak=Math.max(...win), med=base.slice().sort((a,b)=>a-b)[Math.floor(base.length/2)];
+  stats.eTot++;
+  if(peak>med*1.35){stats.eHit++;tip(`Good stress on "${clean(f.w.t)}"`,"ok",1400)}
+  else tip(`"${clean(f.w.t)}" needed more punch`,"warn",2200);
+  updHud();
+}
+function checkPause(f,t0,t1){
+  const need=f.w.pause===2?450:220; const thr=Math.max(0.008,noiseFloor()*2.5);
+  let run=0,maxRun=0,prev=null;
+  samples.filter(s=>s[0]>=t0-900&&s[0]<=t1).forEach(s=>{if(s[1]<=thr){if(prev!=null)run+=s[0]-prev}else run=0;maxRun=Math.max(maxRun,run);prev=s[0]});
+  stats.pTot++;
+  if(maxRun>=need) stats.pHit++; else if(f.w.pause===2) tip("You skipped a long pause — take a breath there","warn",2200);
+}
+function tip(msg,cls,hold){lastTip={t:performance.now()+hold};const el=$("#hTip");el.textContent=msg;el.className="tip "+cls}
+function updHud(){
+  if(!stats) return;
+  const now=performance.now();
+  const n=spokenAt.filter(t=>t&&t>now-8000).length;
+  const f=flat[Math.min(cursor,flat.length-1)]; const L=f?lines()[f.li]:null;
+  const target=Math.round(set.wpm*(L?PACES[L.pace].m:1));
+  const wpm=Math.round(n*7.5);
+  let pill="";
+  if(n>=4){stats.wpmSum+=wpm;stats.wpmN++;stats.rangeN++;
+    if(wpm>target*1.2) pill='<span class="pill bad">Too fast</span>';
+    else if(wpm<target*.7) pill='<span class="pill warn">Slow</span>';
+    else {pill='<span class="pill ok">On pace</span>';stats.inRange++}}
+  $("#hWpm").innerHTML=`${n>=4?wpm:"—"} <small>/ ${target} wpm</small>${pill}`;
+  let semi=null;
+  if(pitches.length>=15){const st=pitches.map(p=>12*Math.log2(p[1]/100));const m=st.reduce((a,b)=>a+b,0)/st.length;semi=Math.sqrt(st.reduce((a,b)=>a+(b-m)*(b-m),0)/st.length)}
+  $("#hPitch").innerHTML=semi==null?"—":`${semi.toFixed(1)} <small>st</small>${semi<1.6?'<span class="pill warn">Flat</span>':semi>5.5?'<span class="pill warn">Jumpy</span>':'<span class="pill ok">Good</span>'}`;
+  $("#hEmph").textContent=`${stats.eHit}/${stats.eTot}`;
+  $("#hPause").textContent=`${stats.pHit}/${stats.pTot}`;
+  if(now>lastTip.t){
+    let msg="",cls="";
+    const prevW=cursor>0&&flat[cursor-1]?flat[cursor-1].w:null;
+    if(prevW&&prevW.pause){msg=prevW.pause===2?"Pause… take a breath":"Short pause";cls="ok"}
+    else if(n>=4&&wpm>target*1.2){msg="Slow down — give each word some room";cls="bad"}
+    else if(semi!=null&&semi<1.6){msg="Your voice is staying on one note — let it rise and fall";cls="warn"}
+    else if(f&&f.w.emph){msg=`Next word gets the stress: "${clean(f.w.t)}"`;cls="ok"}
+    else if(L&&L.note){msg=L.note}
+    else if(L){msg=`${TONES[L.tone].l} tone, ${PACES[L.pace].l.toLowerCase()} pace`}
+    const el=$("#hTip");el.textContent=msg;el.className="tip "+cls;
+  }
+}
+function showSummary(){
+  if(!stats||(!stats.wpmN&&!stats.eTot)) return;
+  const s=$("#summary");
+  s.innerHTML=`<h3>This take</h3>
+   <div><span>Average pace</span><span>${stats.wpmN?Math.round(stats.wpmSum/stats.wpmN):"—"} wpm</span></div>
+   <div><span>Time on pace</span><span>${stats.rangeN?Math.round(stats.inRange/stats.rangeN*100):"—"}%</span></div>
+   <div><span>Stress hit</span><span>${stats.eHit}/${stats.eTot}</span></div>
+   <div><span>Pauses taken</span><span>${stats.pHit}/${stats.pTot}</span></div>
+   <p style="margin:8px 0 0;color:var(--stage-dim);font-family:var(--f-body)">Stress and pause checks are estimated from your volume, not exact.</p>`;
+  s.hidden=false;
+}
+
+/* play / stop */
+async function play(){
+  if(!flat.length) return;
+  if(cursor>=flat.length) setCursor(0);
+  if(set.mode==="voice"){const ok=await startVoice();if(!ok) return}
+  playing=true;$("#cPlay").textContent="❚❚ Pause";
+  try{if(navigator.wakeLock) wakeLock=await navigator.wakeLock.request("screen")}catch(e){}
+  if(set.mode==="auto") autoStep(); else paint();
+}
+function stop(){
+  const wasVoice=recActive;
+  playing=false;clearTimeout(timer);document.querySelectorAll(".pp.hold").forEach(x=>x.classList.remove("hold"));
+  stopVoice();$("#cPlay").textContent="▶ Start";
+  try{wakeLock&&wakeLock.release()}catch(e){}wakeLock=null;
+  if(wasVoice) showSummary();
+}
+function openPrompter(){
+  syncFromInputs();
+  if(!cur().lines.length){status("Apply cues first, then start the prompter.",true);return}
+  $("#prep").hidden=true;$("#prompter").hidden=false;buildPrompter();
+  cursor=0;committed=0;
+  notice("");$("#summary").hidden=true;$("#hud").hidden=true;
+  requestAnimationFrame(paint);
+}
+function closePrompter(){stop();$("#prompter").hidden=true;$("#prep").hidden=false;try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
+
+$("#btnStart").onclick=openPrompter;$("#btnStartTop").onclick=openPrompter;
+$("#cPlay").onclick=()=>playing?stop():play();
+$("#cRestart").onclick=()=>{const p=playing;stop();setCursor(0);committed=0;if(p)play()};
+$("#cExit").onclick=closePrompter;
+$("#cMode").onchange=e=>{stop();set.mode=e.target.value;applySettings();saveSettings();$("#hud").hidden=true;notice(set.mode==="voice"?"Voice mode: press Start and begin speaking. The script will move with your voice.":"")};
+$("#cLang").onchange=e=>{set.lang=e.target.value;saveSettings();if(recActive){stop();play()}};
+$("#cWpm").oninput=e=>{set.wpm=+e.target.value;$("#oWpm").textContent=set.wpm;saveSettings()};
+$("#cSize").oninput=e=>{set.size=+e.target.value;$("#oSize").textContent=set.size;$("#scroller").style.setProperty("--size",set.size+"px");scrollToCur();saveSettings()};
+$("#cMirror").onclick=()=>{set.mirror=!set.mirror;applySettings();saveSettings()};
+$("#cFull").onclick=()=>{try{document.fullscreenElement?document.exitFullscreen():$("#prompter").requestFullscreen().catch(()=>{})}catch(e){}};
+$("#scroller").addEventListener("click",e=>{const w=e.target.closest(".pw");if(!w)return;const i=flat.findIndex(f=>f.el===w);if(i>=0){setCursor(i);committed=i;if(playing&&set.mode==="auto"){clearTimeout(timer);autoStep()}}});
+let wheelT=0;$("#stage").addEventListener("wheel",e=>{e.preventDefault();const n=Date.now();if(n-wheelT<220)return;wheelT=n;const p=playing&&set.mode==="auto";if(p)clearTimeout(timer);lineStart(e.deltaY>0?1:-1);if(p)autoStep()},{passive:false});
+document.addEventListener("keydown",e=>{
+  if($("#prompter").hidden||/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+  if(e.code==="Space"){e.preventDefault();playing?stop():play()}
+  else if(e.key==="ArrowDown"||e.key==="ArrowRight"){e.preventDefault();lineStart(1)}
+  else if(e.key==="ArrowUp"||e.key==="ArrowLeft"){e.preventDefault();lineStart(-1)}
+  else if(e.key==="Escape"&&!document.fullscreenElement) closePrompter();
+  else if(e.key==="+"||e.key==="="){set.size=Math.min(96,set.size+2);applySettings();scrollToCur();saveSettings()}
+  else if(e.key==="-"){set.size=Math.max(24,set.size-2);applySettings();scrollToCur();saveSettings()}
+});
+window.addEventListener("resize",()=>{if(!$("#prompter").hidden)scrollToCur()});
+
+/* ---------- boot ---------- */
+function ensureOne(){
+  if(!Object.keys(scripts).length){const id=newId();scripts[id]=mkDoc(SAMPLE_TITLE,SAMPLE,parseScript(SAMPLE),SAMPLE_OVERALL,true);curId=id;cacheLocal()}
+  if(!scripts[curId]) curId=Object.keys(scripts).sort((a,b)=>(scripts[b].updatedAt||"").localeCompare(scripts[a].updatedAt||""))[0];
+}
+async function boot(){
+  const local=readLocal();
+  if(local){scripts=local.scripts||{};curId=local.curId;set=Object.assign({},DEF_SET,local.set||{})}
+  if(HUB){
+    $("#library").hidden=false;$("#backHub").hidden=false;
+    setSave("Loading…");
+    try{
+      const r=await fetch(API,{credentials:"include"});
+      if(r.status===401||r.status===403){location.href="/";return}
+      if(!r.ok) throw new Error(r.status);
+      const data=await r.json();
+      const remote={};
+      Object.entries(data).forEach(([k,v])=>{if(k==="_settings"){if(v&&typeof v==="object")set=Object.assign({},DEF_SET,v)} else if(v&&v.format===FORMAT) remote[k]=v});
+      // keep any local edits that are newer than the account copy (e.g. made offline), and push them up
+      Object.entries(scripts).forEach(([k,v])=>{
+        if(!remote[k]){
+          if(v.syncedAt) return;                       // was saved before, now gone: deleted on another device
+          remote[k]=v; if(!v.sample) pending.add(k);   // never synced (made offline): push it; the sample stays local
+        } else if((v.updatedAt||"")>(remote[k].updatedAt||"")){remote[k]=v;pending.add(k)}
+      });
+      scripts=remote;
+      setSave(pending.size?"Syncing…":"Saved to your account");
+      if(pending.size) flush();
+    }catch(e){setSave("Offline — working from this browser",true)}
+  }
+  ensureOne(); applySettings(); renderAll();
+}
+boot();
+})();
+</script>
+
+</body>
+</html>

@@ -7,6 +7,7 @@ export const TOOLS = [
   { id: "savedreels", name: "SAVEDREELS", tagline: "Every reel you saved, finally working for you.", status: "live" },
   { id: "contentflow", name: "CONTENTFLOW", tagline: "Inspiration \u2192 Idea \u2192 Script \u2192 Shoot \u2192 Edit. Your pipeline.", status: "live" },
   { id: "pillargen", name: "Content Pillar Generator", tagline: "Any business, any industry \u2014 turn it into a content-pillar strategy.", status: "live" },
+  { id: "voicecoach", name: "U2BER VOICE COACH", tagline: "A teleprompter that coaches your delivery \u2014 stress, pauses, tone and live pace feedback.", status: "live", optIn: true },
   { id: "frameguide", name: "FRAME GUIDE", tagline: "Camera pe composition overlay — shot set karo, phir Blackmagic mein record.", status: "live" },
   { id: "ideas", name: "IDEAS", tagline: "Jo bola, wo kahin khoya nahi \u2014 dictations se seedha script tak.", status: "live", optIn: true },
   { id: "trends", name: "TRENDS", tagline: "Community reel directory \u2014 curate lists, publish them.", status: "live" },
