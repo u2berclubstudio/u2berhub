@@ -190,3 +190,36 @@ CREATE TABLE IF NOT EXISTS contentflow_shares (
 );
 CREATE INDEX IF NOT EXISTS idx_contentflow_shares_shared_user ON contentflow_shares(shared_user_id);
 CREATE INDEX IF NOT EXISTS idx_contentflow_shares_owner ON contentflow_shares(owner_id, project_id);
+
+-- ============ FILMLENS: Chrome extension licences ============
+-- The extension is invite-only. A code allows a limited number of devices
+-- ("seats"); the first activation binds the code to that email. Tokens handed
+-- back to the extension are signed RS256 with a key that lives only on this
+-- server (see server/filmlens.js), so the extension can verify a licence but
+-- never issue one.
+CREATE TABLE IF NOT EXISTS filmlens_codes (
+  code        TEXT PRIMARY KEY,
+  note        TEXT,                        -- who it was cut for
+  seats       INTEGER NOT NULL DEFAULT 2,  -- devices allowed
+  expires_at  TIMESTAMPTZ,                 -- NULL = never
+  revoked     BOOLEAN NOT NULL DEFAULT FALSE,
+  bound_email TEXT,                        -- set on first activation
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS filmlens_activations (
+  id           BIGSERIAL PRIMARY KEY,
+  code         TEXT NOT NULL REFERENCES filmlens_codes(code) ON DELETE CASCADE,
+  email        TEXT NOT NULL,
+  device_id    TEXT NOT NULL,
+  version      TEXT,
+  user_agent   TEXT,
+  ip           TEXT,
+  activated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  released_at  TIMESTAMPTZ,                -- set when a seat is given back
+  UNIQUE (code, device_id)
+);
+CREATE INDEX IF NOT EXISTS idx_filmlens_live ON filmlens_activations(code) WHERE released_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_filmlens_seen ON filmlens_activations(last_seen DESC);

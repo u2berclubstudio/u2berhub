@@ -4,3 +4,6 @@ client/dist
 .env
 *.log
 .DS_Store
+
+# FilmLens licence signing key — never commit
+.keys/
